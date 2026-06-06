@@ -1,0 +1,8 @@
+dist/
+node_modules/
+.vercel/
+
+InvestSkill/
+
+*.log
+.DS_Store

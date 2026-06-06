@@ -1,0 +1,12 @@
+{
+  "name": "late-day-buying-method-watchlist",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Static mobile UI prototype for A-share late-day buying method watchlist.",
+  "scripts": {
+    "build": "rm -rf dist && mkdir -p dist && cp ui-prototype/index.html ui-prototype/style.css ui-prototype/app.js dist/",
+    "dev": "node scripts/dev-server.js",
+    "preview": "node scripts/dev-server.js"
+  }
+}
+

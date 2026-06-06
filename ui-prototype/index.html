@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>A股尾盘买入法看板</title>
+    <link rel="stylesheet" href="./style.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">A</span>
+        <div>
+          <h1>尾盘买入法</h1>
+          <p>板块确认 · 尾盘承接</p>
+        </div>
+      </div>
+
+      <div class="status-strip" aria-label="看板状态">
+        <span class="status-pill live" id="marketStatus">交易中</span>
+        <span>刷新 <strong>3s</strong></span>
+        <span>更新时间 <strong id="updatedAt">--:--:--</strong></span>
+        <span>数据 <strong id="dataMode">实时</strong></span>
+        <span>窗口 <strong id="buyWindow">跟踪</strong></span>
+        <span>行情源 <strong id="quoteSource">实时接口</strong></span>
+        <span>外链 <strong id="fastSite">测速中</strong></span>
+      </div>
+
+      <button class="refresh-btn" id="refreshBtn" type="button" aria-label="刷新候选">
+        刷新
+      </button>
+    </header>
+
+    <main class="layout">
+      <section class="board-list" aria-label="板块和候选股票">
+        <div class="section-head">
+          <div>
+          <span class="eyebrow">Late-Day Lines</span>
+          <h2>尾盘候选方向</h2>
+          </div>
+          <p>按板块强度、前排确认、承接弹性和次日纪律综合排序</p>
+        </div>
+
+        <div id="strategySummary" class="strategy-summary" aria-label="策略判断"></div>
+        <div id="boards" class="boards"></div>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
