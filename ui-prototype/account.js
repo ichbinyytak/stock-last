@@ -1,6 +1,7 @@
 const USERS_KEY = "lateDay.users.v1";
 const SESSION_KEY = "lateDay.session.v1";
 const GUEST_ID = "guest";
+const SCHEDULE_CHECK_MS = 60 * 1000;
 
 let currentUser = null;
 let positions = {};
@@ -11,6 +12,24 @@ let account = {
 };
 let trades = [];
 let editingCode = "";
+let quoteTimer = null;
+
+function shanghaiClock(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Shanghai",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const dayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const hour = Number(values.hour || 0) % 24;
+  return {
+    day: dayMap[values.weekday] ?? date.getDay(),
+    minutes: hour * 60 + Number(values.minute || 0)
+  };
+}
 
 function readJson(key, fallback) {
   try {
@@ -64,6 +83,12 @@ function formatCurrency(value) {
   });
 }
 
+function formatPercent(value) {
+  const amount = Number(value || 0);
+  if (!Number.isFinite(amount)) return "--";
+  return `${amount >= 0 ? "+" : ""}${amount.toFixed(2)}%`;
+}
+
 function formatDate(value) {
   if (!value) return "--";
   return new Date(value).toLocaleString("zh-CN", {
@@ -73,6 +98,94 @@ function formatDate(value) {
     hour: "2-digit",
     minute: "2-digit"
   });
+}
+
+function marketRefreshWindow(date = new Date()) {
+  const { day, minutes } = shanghaiClock(date);
+  const isWeekday = day >= 1 && day <= 5;
+  const auction = minutes >= 9 * 60 + 15 && minutes < 9 * 60 + 30;
+  const morning = minutes >= 9 * 60 + 30 && minutes <= 11 * 60 + 30;
+  const afternoon = minutes >= 13 * 60 && minutes <= 15 * 60;
+  return isWeekday && (auction || morning || afternoon);
+}
+
+function isAfterNextOpen(position) {
+  const base = new Date(position.firstBuyAt || position.updatedAt || 0);
+  if (!base.getTime()) return false;
+  const { day, minutes } = shanghaiClock();
+  const now = new Date();
+  const nowDay = now.toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai" });
+  const baseDay = base.toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai" });
+  return day >= 1 && day <= 5 && nowDay !== baseDay && minutes >= 9 * 60 + 30;
+}
+
+function sellAdvice(position) {
+  const avg = Number(position.avgPrice || 0);
+  const last = Number(position.lastPrice || avg);
+  const open = Number(position.openPrice || 0);
+  const high = Number(position.highPrice || 0);
+  const low = Number(position.lowPrice || 0);
+  const quoteChange = Number(position.quoteChange || 0);
+  const pnlPct = avg ? ((last - avg) / avg) * 100 : 0;
+  const openPct = avg && open ? ((open - avg) / avg) * 100 : pnlPct;
+  const firstPush = Math.max(last * 1.008, avg * 1.015, open ? open * 1.01 : 0);
+  const flatLine = Math.max(avg, last * 0.995);
+  const riskLine = Math.min(avg * 0.98, last * 0.985);
+  const quoteLine = `开 ${formatCurrency(open || last)} / 现 ${formatCurrency(last)} / 涨幅 ${formatPercent(quoteChange)}`;
+  const rangeLine = high || low ? `高 ${formatCurrency(high)} / 低 ${formatCurrency(low)}` : "高低点等待行情刷新";
+  if (!isAfterNextOpen(position)) {
+    return {
+      tag: "未到次日",
+      text: "尾盘买入法默认等次日开盘后再处理。",
+      prices: `观察价 ${formatCurrency(avg)}`,
+      targetPrice: last || avg,
+      detail: [
+        "尚未进入次日 9:30 后的卖出决策区。",
+        "当前只做持仓观察，不把尾盘买入临时转成长线。",
+        quoteLine
+      ]
+    };
+  }
+  if (pnlPct >= 2 || openPct >= 1.5 || quoteChange >= 3) {
+    return {
+      tag: "强势兑现",
+      text: "开盘或盘中强于成本，第一波冲高优先分批卖出。",
+      prices: `冲高卖 ${formatCurrency(firstPush)} / 回落守 ${formatCurrency(flatLine)}`,
+      targetPrice: firstPush,
+      detail: [
+        "开盘后已经有利润垫或个股涨幅强，尾盘买入法优先把隔夜利润兑现。",
+        "如果第一波冲高无量或冲高回落，回落守线附近先降低仓位。",
+        quoteLine,
+        rangeLine
+      ]
+    };
+  }
+  if (pnlPct >= -1 && openPct >= -1.2) {
+    return {
+      tag: "平盘确认",
+      text: "等开盘10-30分钟，量价不主动则降低仓位。",
+      prices: `减仓线 ${formatCurrency(flatLine)} / 风控 ${formatCurrency(riskLine)}`,
+      targetPrice: flatLine,
+      detail: [
+        "开盘没有明显走坏，先看 10-30 分钟承接和板块强度。",
+        "如果不能站回均价或现价持续弱于开盘价，按减仓线处理。",
+        quoteLine,
+        rangeLine
+      ]
+    };
+  }
+  return {
+    tag: "弱势风控",
+    text: "弱开或板块掉队，优先卖出，不转成长线。",
+    prices: `风控卖 ${formatCurrency(last)} / 硬止 ${formatCurrency(riskLine)}`,
+    targetPrice: last || riskLine,
+    detail: [
+      "开盘信息偏弱，说明隔夜预期没有兑现，尾盘买入法不适合扛成波段。",
+      "优先用现价或反抽价处理，跌破硬止线不再等待。",
+      quoteLine,
+      rangeLine
+    ]
+  };
 }
 
 function setMessage(message, type = "") {
@@ -137,6 +250,7 @@ function startUserSession(user) {
   localStorage.setItem(SESSION_KEY, user.key);
   loadUserData();
   renderAll();
+  schedulePositionRefresh();
 }
 
 async function registerUser(username, password) {
@@ -170,6 +284,10 @@ async function loginUser(username, password) {
 }
 
 function logoutUser() {
+  if (quoteTimer) {
+    clearInterval(quoteTimer);
+    quoteTimer = null;
+  }
   currentUser = null;
   localStorage.removeItem(SESSION_KEY);
   positions = {};
@@ -209,7 +327,6 @@ function renderAll() {
 
   renderSummary();
   renderPositions();
-  renderSellAdvice();
   renderHistory();
 }
 
@@ -248,39 +365,63 @@ function renderPositions() {
         <label><span>均价</span><input data-field="avgPrice" type="number" min="0" step="0.01" value="${Number(item.avgPrice || 0).toFixed(2)}"></label>
         <label><span>现价</span><input data-field="lastPrice" type="number" min="0" step="0.01" value="${Number(item.lastPrice || item.avgPrice || 0).toFixed(2)}"></label>
       </div>
-      <div class="edit-actions">
-        <button class="secondary-btn edit-position" type="button">${editingCode === item.code ? "收起" : "编辑"}</button>
-        <button class="secondary-btn save-position" type="button">保存</button>
-        <button class="danger-btn delete-position" type="button">删除</button>
+      <div class="position-bottom">
+        ${renderInlineSellAdvice(item)}
+        <div class="edit-actions">
+          <button class="danger-btn sell-position" type="button">卖出</button>
+          <button class="secondary-btn sell-detail" type="button">详情</button>
+          <button class="secondary-btn edit-position" type="button">${editingCode === item.code ? "收起" : "编辑"}</button>
+          <button class="secondary-btn save-position" type="button">保存</button>
+          <button class="danger-btn delete-position" type="button">删除</button>
+        </div>
       </div>
     </div>
   `).join("");
 }
 
-function renderSellAdvice() {
-  const list = document.getElementById("sellAdviceList");
-  if (!currentUser) {
-    list.innerHTML = `<div class="portfolio-empty">登录后生成卖盘建议</div>`;
-    return;
-  }
-  const rows = positionRows();
-  if (!rows.length) {
-    list.innerHTML = `<div class="portfolio-empty">暂无持仓，暂不生成卖盘建议</div>`;
-    return;
-  }
-  list.innerHTML = rows.map((item) => {
-    const qty = Number(item.quantity || 0);
-    const avg = Number(item.avgPrice || 0);
-    const last = Number(item.lastPrice || avg);
-    const pnl = qty * (last - avg);
-    const advice = pnl > 0 ? "已有浮盈，次日优先看竞价和第一波冲高，适合分批处理。" : "未形成浮盈，若板块弱或低开，优先控制回撤。";
-    return `
-      <div class="advice-row">
-        <strong>${item.name}</strong>
-        <span>${advice}</span>
-      </div>
-    `;
-  }).join("");
+function renderInlineSellAdvice(item) {
+  const advice = sellAdvice(item);
+  return `
+    <div class="position-sell-advice">
+      <span>${advice.tag}</span>
+      <strong>${advice.prices}</strong>
+      <p>${advice.text}</p>
+    </div>
+  `;
+}
+
+function openSellTrade(code) {
+  const item = positions[code];
+  if (!item) return;
+  const advice = sellAdvice(item);
+  document.getElementById("tradeType").value = "SELL";
+  document.getElementById("tradeCode").value = item.code;
+  document.getElementById("tradeName").value = item.name;
+  document.getElementById("tradeQuantity").value = Number(item.quantity || 0);
+  document.getElementById("tradePrice").value = Number(advice.targetPrice || item.lastPrice || item.avgPrice || 0).toFixed(2);
+  openModal("tradeModal");
+}
+
+function openSellDetail(code) {
+  const item = positions[code];
+  if (!item) return;
+  const advice = sellAdvice(item);
+  const title = document.getElementById("sellDetailTitle");
+  const sub = document.getElementById("sellDetailSub");
+  const body = document.getElementById("sellDetailBody");
+  title.textContent = `${item.name} 卖出建议`;
+  sub.textContent = `${item.code} · ${advice.tag} · ${formatDate(item.quoteUpdatedAt)}`;
+  body.innerHTML = `
+    <div class="sell-detail-kv">
+      <span>建议价格</span><strong>${advice.prices}</strong>
+      <span>持仓成本</span><strong>${formatCurrency(item.avgPrice)}</strong>
+      <span>当前价格</span><strong>${formatCurrency(item.lastPrice || item.avgPrice)}</strong>
+      <span>今日开盘</span><strong>${formatCurrency(item.openPrice || item.lastPrice || item.avgPrice)}</strong>
+    </div>
+    <p class="sell-detail-main">${advice.text}</p>
+    <ul>${advice.detail.map((line) => `<li>${line}</li>`).join("")}</ul>
+  `;
+  openModal("sellDetailModal");
 }
 
 function renderHistory() {
@@ -335,6 +476,7 @@ function applyTrade({ type, code, name, quantity, price, note = "账户页手动
       totalCost,
       avgPrice: totalCost / totalQuantity,
       lastPrice: tradePrice,
+      firstBuyAt: old.firstBuyAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
     account.cash = Number(account.cash || 0) - amount;
@@ -369,6 +511,7 @@ function applyTrade({ type, code, name, quantity, price, note = "账户页手动
     note
   });
   renderAll();
+  schedulePositionRefresh();
 }
 
 function saveEditedPosition(row) {
@@ -389,11 +532,72 @@ function saveEditedPosition(row) {
       avgPrice,
       lastPrice,
       totalCost: quantity * avgPrice,
+      firstBuyAt: old.firstBuyAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
   }
   savePositions();
   renderAll();
+  schedulePositionRefresh();
+}
+
+async function refreshPositionQuotes() {
+  if (!currentUser) return;
+  const rows = positionRows();
+  if (!rows.length) return;
+  try {
+    const codes = rows.map((item) => item.code).join(",");
+    const response = await fetch(`/api/quotes?codes=${encodeURIComponent(codes)}&t=${Date.now()}`, {
+      cache: "no-store"
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.detail || payload.error || `HTTP ${response.status}`);
+    const quotes = new Map((payload.quotes || []).map((quote) => [String(quote.code), quote]));
+    let changed = false;
+    rows.forEach((item) => {
+      const quote = quotes.get(String(item.code));
+      if (!quote || !quote.price) return;
+      const old = positions[item.code];
+      if (!old) return;
+      old.lastPrice = quote.price;
+      old.name = old.name || quote.name;
+      old.quoteChange = quote.change;
+      old.openPrice = quote.open || old.openPrice || 0;
+      old.highPrice = quote.high || old.highPrice || 0;
+      old.lowPrice = quote.low || old.lowPrice || 0;
+      old.quoteUpdatedAt = payload.updatedAt;
+      changed = true;
+    });
+    if (changed) {
+      savePositions();
+      renderSummary();
+      renderPositions();
+    }
+  } catch {
+    // Keep locally entered prices if realtime quote temporarily fails.
+  }
+}
+
+function schedulePositionRefresh() {
+  if (quoteTimer) {
+    clearInterval(quoteTimer);
+    quoteTimer = null;
+  }
+  if (!currentUser || !positionRows().length) return;
+  if (!marketRefreshWindow()) {
+    quoteTimer = setTimeout(schedulePositionRefresh, SCHEDULE_CHECK_MS);
+    return;
+  }
+  refreshPositionQuotes();
+  quoteTimer = setInterval(() => {
+    if (!marketRefreshWindow()) {
+      clearInterval(quoteTimer);
+      quoteTimer = null;
+      schedulePositionRefresh();
+      return;
+    }
+    refreshPositionQuotes();
+  }, 3000);
 }
 
 document.getElementById("accountAuthForm").addEventListener("submit", async (event) => {
@@ -445,20 +649,29 @@ document.getElementById("positionsList").addEventListener("click", (event) => {
   const row = event.target.closest(".edit-row");
   if (!row) return;
   try {
+    if (event.target.closest(".sell-position")) {
+      openSellTrade(row.dataset.code);
+      return;
+    }
+    if (event.target.closest(".sell-detail")) {
+      openSellDetail(row.dataset.code);
+      return;
+    }
     if (event.target.closest(".edit-position")) {
       editingCode = editingCode === row.dataset.code ? "" : row.dataset.code;
       renderPositions();
       return;
     }
     if (event.target.closest(".save-position")) {
-      saveEditedPosition(row);
       editingCode = "";
+      saveEditedPosition(row);
       setMessage("持仓已更新", "ok");
     }
     if (event.target.closest(".delete-position")) {
       delete positions[row.dataset.code];
       savePositions();
       renderAll();
+      schedulePositionRefresh();
       setMessage("持仓已删除", "ok");
     }
   } catch (error) {
@@ -510,6 +723,7 @@ function init() {
   currentUser = sessionKey && users[sessionKey] ? users[sessionKey] : null;
   if (currentUser) loadUserData();
   renderAll();
+  schedulePositionRefresh();
   if (!currentUser && new URLSearchParams(location.search).has("login")) {
     document.getElementById("accountUsername").focus();
   }

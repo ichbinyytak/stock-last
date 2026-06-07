@@ -33,18 +33,17 @@
           </div>
         </div>
 
-        <div class="summary-grid compact-summary">
-          <div><span>总金额</span><strong id="sumInitial">--</strong></div>
-          <div><span>现金</span><strong id="sumCash">--</strong></div>
-          <div><span>持仓市值</span><strong id="sumMarket">--</strong></div>
-          <div><span>总资产</span><strong id="sumAssets">--</strong></div>
-          <div><span>浮动盈亏</span><strong id="sumFloat">--</strong></div>
-          <div><span>总盈亏</span><strong id="sumTotalPnl">--</strong></div>
-        </div>
-
-        <div class="toolbar-line">
-          <button class="primary-btn" id="openMoneyBtn" type="button">编辑资金</button>
-          <button class="secondary-btn" id="openTradeBtn" type="button">记录买卖</button>
+        <div class="account-summary-strip compact-summary">
+          <div class="summary-item"><span>总金额</span><strong id="sumInitial">--</strong></div>
+          <div class="summary-item"><span>现金</span><strong id="sumCash">--</strong></div>
+          <div class="summary-item"><span>持仓市值</span><strong id="sumMarket">--</strong></div>
+          <div class="summary-item"><span>总资产</span><strong id="sumAssets">--</strong></div>
+          <div class="summary-item"><span>浮动盈亏</span><strong id="sumFloat">--</strong></div>
+          <div class="summary-item"><span>总盈亏</span><strong id="sumTotalPnl">--</strong></div>
+          <div class="account-summary-actions">
+            <button class="secondary-btn" id="openMoneyBtn" type="button">编辑</button>
+            <button class="secondary-btn" id="openTradeBtn" type="button">记录</button>
+          </div>
         </div>
 
         <section class="account-section locked" id="positionsSection">
@@ -53,14 +52,6 @@
             <span>点编辑修改数量、成本、现价</span>
           </div>
           <div class="editable-list compact-list" id="positionsList"></div>
-        </section>
-
-        <section class="account-section locked">
-          <div class="section-line">
-            <strong>卖盘建议</strong>
-            <span>预留模块</span>
-          </div>
-          <div class="advice-list" id="sellAdviceList"></div>
         </section>
 
         <section class="account-section locked">
@@ -126,6 +117,19 @@
         <input id="tradePrice" type="number" min="0.01" step="0.01" placeholder="价格" required>
         <button class="primary-btn" type="submit">记录</button>
       </form>
+    </div>
+
+    <div class="auth-modal hidden" id="sellDetailModal" role="dialog" aria-modal="true" aria-labelledby="sellDetailTitle">
+      <div class="auth-card sell-detail-card">
+        <div class="auth-head">
+          <div>
+            <h2 id="sellDetailTitle">卖出建议详情</h2>
+            <p id="sellDetailSub">按次日开盘信息实时调整</p>
+          </div>
+          <button class="icon-btn" data-close="sellDetailModal" type="button" aria-label="关闭">×</button>
+        </div>
+        <div class="sell-detail-body" id="sellDetailBody"></div>
+      </div>
     </div>
 
     <div class="auth-modal hidden" id="passwordModal" role="dialog" aria-modal="true" aria-labelledby="passwordTitle">

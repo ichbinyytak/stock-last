@@ -2,6 +2,7 @@ const externalSites = ["东方财富", "同花顺", "雪球"];
 const USERS_KEY = "lateDay.users.v1";
 const SESSION_KEY = "lateDay.session.v1";
 const GUEST_ID = "guest";
+const SCHEDULE_CHECK_MS = 60 * 1000;
 
 let boards = [];
 let selected = {
@@ -18,6 +19,24 @@ let currentUser = null;
 let favorites = new Set();
 let positions = {};
 let buyTarget = null;
+let refreshTimer = null;
+
+function shanghaiClock(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Shanghai",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const dayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const hour = Number(values.hour || 0) % 24;
+  return {
+    day: dayMap[values.weekday] ?? date.getDay(),
+    minutes: hour * 60 + Number(values.minute || 0)
+  };
+}
 
 function readJson(key, fallback) {
   try {
@@ -271,6 +290,7 @@ function recordBuy(quantity, price) {
     totalCost,
     avgPrice: totalCost / totalQuantity,
     lastPrice: buyPrice,
+    firstBuyAt: old.firstBuyAt || new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
   const account = loadAccount();
@@ -382,9 +402,7 @@ function updateMarketStatus(market) {
     return;
   }
 
-  const now = new Date();
-  const day = now.getDay();
-  const minutes = now.getHours() * 60 + now.getMinutes();
+  const { day, minutes } = shanghaiClock();
   const auctionOpen = minutes >= 9 * 60 + 15 && minutes < 9 * 60 + 20;
   const auctionLocked = minutes >= 9 * 60 + 20 && minutes < 9 * 60 + 25;
   const preOpen = minutes >= 9 * 60 + 25 && minutes < 9 * 60 + 30;
@@ -444,6 +462,36 @@ function updateMarketStatus(market) {
   node.title = isTrading ? "实时行情生成" : "休市，显示前一交易时段最后行情";
   if (dataMode) dataMode.textContent = isTrading ? "实时" : "前市最后";
   if (buyWindow) buyWindow.textContent = isTrading ? "跟踪" : "复盘";
+}
+
+function isMarketRefreshWindow(date = new Date()) {
+  const { day, minutes } = shanghaiClock(date);
+  const isWeekday = day >= 1 && day <= 5;
+  const auction = minutes >= 9 * 60 + 15 && minutes < 9 * 60 + 30;
+  const morning = minutes >= 9 * 60 + 30 && minutes <= 11 * 60 + 30;
+  const afternoon = minutes >= 13 * 60 && minutes <= 15 * 60;
+  return isWeekday && (auction || morning || afternoon);
+}
+
+function scheduleBoardRefresh() {
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+  if (!isMarketRefreshWindow()) {
+    refreshTimer = setTimeout(scheduleBoardRefresh, SCHEDULE_CHECK_MS);
+    return;
+  }
+  refreshTimer = setInterval(() => {
+    if (!isMarketRefreshWindow()) {
+      clearInterval(refreshTimer);
+      refreshTimer = null;
+      updateMarketStatus();
+      scheduleBoardRefresh();
+      return;
+    }
+    loadRecommendations();
+  }, 3000);
 }
 
 function chooseFastSite() {
@@ -760,7 +808,4 @@ document.getElementById("buyForm").addEventListener("submit", (event) => {
 initAuth();
 chooseFastSite();
 updateMarketStatus();
-loadRecommendations();
-setInterval(() => {
-  loadRecommendations();
-}, 3000);
+loadRecommendations().finally(scheduleBoardRefresh);

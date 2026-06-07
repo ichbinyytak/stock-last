@@ -98,12 +98,11 @@ p {
   display: flex;
   min-width: 0;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 5px 10px;
   align-items: center;
   justify-content: center;
 }
 
-.status-strip span,
 .refresh-btn,
 .auth-btn,
 .mini-btn,
@@ -122,40 +121,48 @@ p {
 .status-strip span {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 5px 9px;
+  gap: 3px;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
   color: var(--muted);
+  font-size: 12px;
+  line-height: 1;
   white-space: nowrap;
 }
 
 .status-strip strong {
   color: var(--text);
+  font-size: 12px;
+  line-height: 1;
 }
 
 .status-strip .live {
-  border-color: #b8e5cb;
-  background: var(--green-bg);
+  border: 0;
+  background: transparent;
   color: var(--green);
   font-weight: 700;
 }
 
 .status-strip .closed {
-  border-color: var(--line);
-  background: #f4f6fa;
+  border: 0;
+  background: transparent;
   color: var(--muted);
   font-weight: 700;
 }
 
 .status-strip .auction {
-  border-color: #b9d6ff;
-  background: var(--blue-bg);
+  border: 0;
+  background: transparent;
   color: var(--blue);
   font-weight: 700;
 }
 
 .status-strip .late {
-  border-color: #ffd081;
-  background: var(--amber-bg);
+  border: 0;
+  background: transparent;
   color: var(--amber);
   font-weight: 800;
 }
@@ -166,6 +173,13 @@ p {
   color: var(--blue);
   font-weight: 700;
   cursor: pointer;
+}
+
+.refresh-btn {
+  width: auto;
+  min-height: 24px;
+  padding: 1px 7px;
+  font-size: 12px;
 }
 
 .auth-btn {
@@ -895,8 +909,7 @@ p {
   font-size: 12px;
 }
 
-.account-actions,
-.toolbar-line {
+.account-actions {
   display: flex;
   gap: 6px;
   align-items: center;
@@ -904,21 +917,24 @@ p {
 }
 
 .account-actions .primary-btn,
-.account-actions .secondary-btn,
-.toolbar-line .primary-btn,
-.toolbar-line .secondary-btn {
+.account-actions .secondary-btn {
   min-height: 30px;
   padding: 3px 8px;
   font-size: 12px;
 }
 
-.toolbar-line {
-  justify-content: stretch;
+.account-summary-actions {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
 }
 
-.toolbar-line .primary-btn,
-.toolbar-line .secondary-btn {
-  flex: 1 1 0;
+.account-summary-actions .secondary-btn {
+  min-height: 21px;
+  border-radius: 5px;
+  padding: 1px 5px;
+  font-size: 10px;
+  line-height: 1;
 }
 
 .account-section {
@@ -948,67 +964,40 @@ p {
   font-size: 14px;
 }
 
-.account-form,
-.money-form,
-.trade-form {
-  display: grid;
-  gap: 8px;
+.account-summary-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  align-items: center;
+  padding: 2px 4px 3px;
 }
 
-.money-form {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.trade-form {
-  grid-template-columns: 84px minmax(70px, 1fr) minmax(84px, 1.1fr) minmax(76px, 0.9fr) minmax(76px, 0.9fr) 72px;
-}
-
-.trade-form select,
-.trade-form input {
+.account-summary-strip .summary-item {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 3px;
   min-width: 0;
-  min-height: 36px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #fff;
-  padding: 6px 8px;
-  font: inherit;
+  padding: 0;
+  white-space: nowrap;
 }
 
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.compact-summary {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.summary-grid div {
-  display: grid;
-  gap: 2px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: #fbfcfe;
-  padding: 7px;
-}
-
-.summary-grid span {
+.account-summary-strip span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
+  line-height: 1;
 }
 
-.summary-grid strong {
-  overflow: hidden;
+.account-summary-strip strong {
   color: var(--text);
-  font-size: 13px;
-  text-overflow: ellipsis;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
   white-space: nowrap;
 }
 
 .editable-list,
-.history-list,
-.advice-list {
+.history-list {
   display: grid;
   gap: 8px;
 }
@@ -1088,15 +1077,34 @@ p {
 }
 
 .edit-actions {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 4px;
+  justify-content: flex-end;
+}
+
+.position-bottom {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: end;
+  border-top: 1px dashed var(--line);
+  padding-top: 5px;
+}
+
+.edit-row:not(.editing) .save-position {
+  display: none;
+}
+
+.edit-row:not(.editing) .edit-actions {
+  display: flex;
 }
 
 .edit-actions .secondary-btn,
 .edit-actions .danger-btn {
-  min-height: 28px;
-  padding: 2px 4px;
+  min-height: 24px;
+  padding: 2px 6px;
   font-size: 11px;
 }
 
@@ -1105,6 +1113,102 @@ p {
   color: var(--red);
   font-weight: 800;
   cursor: pointer;
+}
+
+.position-sell-advice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 3px 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.position-sell-advice span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  border-radius: 999px;
+  background: var(--amber-bg);
+  color: var(--amber);
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.position-sell-advice strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.position-sell-advice p {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 430px) {
+  .position-bottom {
+    grid-template-columns: 1fr;
+  }
+
+  .position-bottom .edit-actions {
+    justify-content: flex-start;
+  }
+}
+
+.sell-detail-card {
+  gap: 10px;
+}
+
+.sell-detail-body {
+  display: grid;
+  gap: 8px;
+}
+
+.sell-detail-kv {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fbfcfe;
+  padding: 8px;
+  font-size: 12px;
+}
+
+.sell-detail-kv span {
+  color: var(--muted);
+}
+
+.sell-detail-kv strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sell-detail-main {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.sell-detail-body ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .history-row {
@@ -1214,21 +1318,16 @@ body {
 .status-strip {
   grid-column: 1 / -1;
   justify-content: flex-start;
-  flex-wrap: nowrap;
-  gap: 6px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-  scrollbar-width: none;
-}
-
-.status-strip::-webkit-scrollbar {
-  display: none;
+  flex-wrap: wrap;
+  gap: 5px 9px;
+  overflow: visible;
+  padding-bottom: 1px;
 }
 
 .status-strip span {
-  min-height: 28px;
-  padding: 4px 7px;
-  font-size: 12px;
+  min-height: 0;
+  padding: 0;
+  font-size: 11px;
 }
 
 .layout {
@@ -1240,15 +1339,6 @@ body {
 
 .account-layout {
   max-width: 430px;
-}
-
-.money-form,
-.trade-form {
-  grid-template-columns: 1fr;
-}
-
-.compact-summary {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .edit-row {
@@ -1264,7 +1354,7 @@ body {
 }
 
 .edit-actions {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  justify-content: flex-end;
 }
 
 .section-head {

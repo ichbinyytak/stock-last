@@ -2,6 +2,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const recommendations = require("../api/recommendations");
+const quotes = require("../api/quotes");
 
 const root = path.resolve(__dirname, "..", "ui-prototype");
 const port = Number(process.env.PORT || 4173);
@@ -62,6 +63,10 @@ function apiResponse(res) {
 const server = http.createServer(async (req, res) => {
   if (req.url.startsWith("/api/recommendations")) {
     await recommendations(req, apiResponse(res));
+    return;
+  }
+  if (req.url.startsWith("/api/quotes")) {
+    await quotes(req, apiResponse(res));
     return;
   }
   serveFile(req, res);
