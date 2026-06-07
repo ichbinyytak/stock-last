@@ -33,7 +33,9 @@
           </div>
         </div>
 
-        <div class="account-summary-strip compact-summary">
+        <div class="account-login-note" id="accountLoginNote">登录后查看个人资金、持仓和历史买卖。</div>
+
+        <div class="account-summary-strip compact-summary auth-only">
           <div class="summary-item"><span>总金额</span><strong id="sumInitial">--</strong></div>
           <div class="summary-item"><span>现金</span><strong id="sumCash">--</strong></div>
           <div class="summary-item"><span>持仓市值</span><strong id="sumMarket">--</strong></div>
@@ -46,7 +48,19 @@
           </div>
         </div>
 
-        <section class="account-section locked" id="positionsSection">
+        <section class="account-section admin-only hidden" id="adminSection">
+          <div class="section-line">
+            <strong>用户管理</strong>
+            <span>仅超级用户</span>
+          </div>
+          <div class="admin-user-line">
+            <span id="adminUserCount">0 个服务器用户</span>
+            <button class="secondary-btn" id="openAdminUserBtn" type="button">新增/重设</button>
+          </div>
+          <div class="history-list" id="adminUserList"></div>
+        </section>
+
+        <section class="account-section locked auth-only" id="positionsSection">
           <div class="section-line">
             <strong>持仓</strong>
             <span>点编辑修改数量、成本、现价</span>
@@ -54,7 +68,7 @@
           <div class="editable-list compact-list" id="positionsList"></div>
         </section>
 
-        <section class="account-section locked">
+        <section class="account-section locked auth-only">
           <div class="section-line">
             <strong>历史买卖</strong>
             <span id="tradeCount">0 条</span>
@@ -68,17 +82,16 @@
       <form class="auth-card" id="accountAuthForm">
         <div class="auth-head">
           <div>
-            <h2 id="loginTitle">登录 / 注册</h2>
-            <p>本机保存，按账号隔离</p>
+            <h2 id="loginTitle">登录</h2>
+            <p>使用管理员账号或已新增用户</p>
           </div>
           <button class="icon-btn" data-close="loginModal" type="button" aria-label="关闭">×</button>
         </div>
         <label class="field"><span>账号</span><input id="accountUsername" autocomplete="username" maxlength="24" required></label>
-        <label class="field"><span>密码</span><input id="accountPassword" type="password" autocomplete="current-password" minlength="4" required></label>
+        <label class="field"><span>密码</span><input id="accountPassword" type="password" autocomplete="current-password" required></label>
         <p class="auth-message" id="accountMessage"></p>
-        <div class="auth-actions two">
+        <div class="auth-actions">
           <button class="primary-btn" type="submit">登录</button>
-          <button class="secondary-btn" id="accountRegisterBtn" type="button">注册</button>
         </div>
       </form>
     </div>
@@ -95,6 +108,21 @@
         <label class="field"><span>账户总金额</span><input id="initialCapital" type="number" inputmode="decimal" min="0" step="0.01"></label>
         <label class="field"><span>可用现金</span><input id="cashAmount" type="number" inputmode="decimal" step="0.01"></label>
         <button class="primary-btn" type="submit">保存资金</button>
+      </form>
+    </div>
+
+    <div class="auth-modal hidden" id="adminUserModal" role="dialog" aria-modal="true" aria-labelledby="adminUserTitle">
+      <form class="auth-card" id="adminUserForm">
+        <div class="auth-head">
+          <div>
+            <h2 id="adminUserTitle">新增/重设用户</h2>
+            <p>由超级用户写入服务器用户表</p>
+          </div>
+          <button class="icon-btn" data-close="adminUserModal" type="button" aria-label="关闭">×</button>
+        </div>
+        <label class="field"><span>账号</span><input id="newManagedUsername" autocomplete="off" maxlength="24" required></label>
+        <label class="field"><span>密码</span><input id="newManagedPassword" type="password" autocomplete="new-password" required></label>
+        <button class="primary-btn" type="submit">保存用户</button>
       </form>
     </div>
 

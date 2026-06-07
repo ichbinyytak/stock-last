@@ -1,9 +1,11 @@
-const USERS_KEY = "lateDay.users.v1";
+const PROFILE_CACHE_KEY = "lateDay.userProfiles.v1";
 const SESSION_KEY = "lateDay.session.v1";
+const AUTH_TOKEN_KEY = "lateDay.authToken.v1";
 const GUEST_ID = "guest";
 const SCHEDULE_CHECK_MS = 60 * 1000;
 
 let currentUser = null;
+let authToken = "";
 let positions = {};
 let account = {
   initialCapital: 0,
@@ -44,10 +46,6 @@ function writeJson(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
-function normalizeUsername(value) {
-  return String(value || "").trim().toLowerCase();
-}
-
 function userScope() {
   return currentUser ? currentUser.id : GUEST_ID;
 }
@@ -56,22 +54,18 @@ function scopedKey(name) {
   return `lateDay.${userScope()}.${name}.v1`;
 }
 
-function loadUsers() {
-  return readJson(USERS_KEY, {});
+function loadProfileCache() {
+  return readJson(PROFILE_CACHE_KEY, {});
 }
 
-function saveUsers(users) {
-  writeJson(USERS_KEY, users);
+function saveProfileCache(users) {
+  writeJson(PROFILE_CACHE_KEY, users);
 }
 
-async function hashPassword(username, password) {
-  const payload = `late-day-buying:${normalizeUsername(username)}:${password}`;
-  if (window.crypto && window.crypto.subtle) {
-    const bytes = new TextEncoder().encode(payload);
-    const hash = await window.crypto.subtle.digest("SHA-256", bytes);
-    return Array.from(new Uint8Array(hash)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
-  }
-  return btoa(unescape(encodeURIComponent(payload)));
+function cacheUserProfile(user) {
+  const users = loadProfileCache();
+  users[user.key] = user;
+  saveProfileCache(users);
 }
 
 function formatCurrency(value) {
@@ -245,42 +239,56 @@ function appendTrade(trade) {
   saveTrades();
 }
 
-function startUserSession(user) {
+function startUserSession(user, token = authToken) {
   currentUser = user;
+  authToken = token || "";
   localStorage.setItem(SESSION_KEY, user.key);
+  if (authToken) localStorage.setItem(AUTH_TOKEN_KEY, authToken);
   loadUserData();
   renderAll();
   schedulePositionRefresh();
-}
-
-async function registerUser(username, password) {
-  const key = normalizeUsername(username);
-  if (!key || key.length < 2) throw new Error("账号至少 2 个字符");
-  if (String(password || "").length < 4) throw new Error("密码至少 4 位");
-  const users = loadUsers();
-  if (users[key]) throw new Error("账号已存在，请直接登录");
-  const user = {
-    key,
-    id: `u_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-    username: String(username).trim(),
-    passwordHash: await hashPassword(key, password),
-    createdAt: new Date().toISOString()
-  };
-  users[key] = user;
-  saveUsers(users);
-  startUserSession(user);
-  setMessage("注册成功，已登录", "ok");
+  if (currentUser.role === "admin") loadAdminUsers();
 }
 
 async function loginUser(username, password) {
-  const key = normalizeUsername(username);
-  const users = loadUsers();
-  const user = users[key];
-  if (!user) throw new Error("账号不存在");
-  const hash = await hashPassword(key, password);
-  if (hash !== user.passwordHash) throw new Error("密码不正确");
-  startUserSession(user);
+  let response;
+  let payload = {};
+  try {
+    response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password })
+    });
+  } catch {
+      throw new Error("登录接口不可用，请用 npm run dev 后打开 http://localhost:4173/account.html");
+  }
+  const text = await response.text();
+  try {
+    payload = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error("登录接口返回异常，请确认不是直接打开 HTML 文件");
+  }
+  let user = response.ok ? payload.user : null;
+  if (!user) throw new Error(payload.error || "账号或密码不正确");
+  if (!user) throw new Error("登录接口未返回用户信息");
+  cacheUserProfile(user);
+  startUserSession(user, payload.token || "");
   setMessage("登录成功", "ok");
+}
+
+async function createManagedUser(username, password) {
+  if (!currentUser || currentUser.role !== "admin") throw new Error("只有超级用户可以新增用户");
+  const response = await fetch("/api/auth/manage-users", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${authToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ username, password })
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || "保存用户失败");
+  renderAdminUsers(payload.users || []);
 }
 
 function logoutUser() {
@@ -289,7 +297,9 @@ function logoutUser() {
     quoteTimer = null;
   }
   currentUser = null;
+  authToken = "";
   localStorage.removeItem(SESSION_KEY);
+  localStorage.removeItem(AUTH_TOKEN_KEY);
   positions = {};
   trades = [];
   account = { initialCapital: 0, cash: 0, updatedAt: "" };
@@ -315,11 +325,16 @@ function calcSummary() {
 
 function renderAll() {
   const logged = Boolean(currentUser);
+  const isAdmin = logged && currentUser.role === "admin";
   document.getElementById("authState").textContent = logged ? `已登录：${currentUser.username}` : "未登录";
   document.getElementById("accountTitle").textContent = logged ? `${currentUser.username} 的账户` : "账户数据";
   document.getElementById("accountUserLabel").textContent = logged ? currentUser.username : "请先登录";
   document.getElementById("accountLogoutBtn").disabled = !logged;
-  document.getElementById("openPasswordBtn").disabled = !logged;
+  document.getElementById("openPasswordBtn").disabled = true;
+  document.getElementById("openPasswordBtn").title = "预置账号暂不支持自助改密";
+  document.getElementById("accountLoginNote").classList.toggle("hidden", logged);
+  document.querySelectorAll(".auth-only").forEach((node) => node.classList.toggle("hidden", !logged));
+  document.getElementById("adminSection").classList.toggle("hidden", !isAdmin);
   document.querySelectorAll(".locked").forEach((node) => node.classList.toggle("disabled", !logged));
 
   document.getElementById("initialCapital").value = logged ? Number(account.initialCapital || 0).toFixed(2) : "";
@@ -328,6 +343,7 @@ function renderAll() {
   renderSummary();
   renderPositions();
   renderHistory();
+  renderAdminUsers();
 }
 
 function renderSummary() {
@@ -444,6 +460,42 @@ function renderHistory() {
       <small>${formatDate(item.createdAt)}</small>
     </div>
   `).join("");
+}
+
+function renderAdminUsers(rows = []) {
+  const section = document.getElementById("adminSection");
+  if (!section || section.classList.contains("hidden")) return;
+  document.getElementById("adminUserCount").textContent = `${rows.length} 个服务器用户`;
+  const list = document.getElementById("adminUserList");
+  if (!rows.length) {
+    list.innerHTML = `<div class="portfolio-empty">暂无服务器用户，或尚未配置用户存储</div>`;
+    return;
+  }
+  list.innerHTML = rows.map((item) => `
+    <div class="history-row admin-user-row">
+      <span>用户</span>
+      <strong>${item.username}</strong>
+      <b>${item.key}</b>
+      <em>${formatDate(item.updatedAt || item.createdAt)}</em>
+      <small>${item.seeded ? "默认" : "服务器"}</small>
+    </div>
+  `).join("");
+}
+
+async function loadAdminUsers() {
+  if (!currentUser || currentUser.role !== "admin") return;
+  try {
+    const response = await fetch("/api/auth/manage-users", {
+      headers: { Authorization: `Bearer ${authToken}` },
+      cache: "no-store"
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "加载用户失败");
+    renderAdminUsers(payload.users || []);
+  } catch (error) {
+    const list = document.getElementById("adminUserList");
+    if (list) list.innerHTML = `<div class="portfolio-empty">${error instanceof Error ? error.message : String(error)}</div>`;
+  }
 }
 
 function applyTrade({ type, code, name, quantity, price, note = "账户页手动记录" }) {
@@ -612,22 +664,12 @@ document.getElementById("accountAuthForm").addEventListener("submit", async (eve
   }
 });
 
-document.getElementById("accountRegisterBtn").addEventListener("click", async () => {
-  try {
-    await registerUser(
-      document.getElementById("accountUsername").value,
-      document.getElementById("accountPassword").value
-    );
-  } catch (error) {
-    setMessage(error instanceof Error ? error.message : String(error), "error");
-  }
-});
-
 document.getElementById("accountLogoutBtn").addEventListener("click", logoutUser);
 document.getElementById("openLoginBtn").addEventListener("click", () => openModal("loginModal"));
 document.getElementById("openMoneyBtn").addEventListener("click", () => openModal("moneyModal"));
 document.getElementById("openTradeBtn").addEventListener("click", () => openModal("tradeModal"));
 document.getElementById("openPasswordBtn").addEventListener("click", () => openModal("passwordModal"));
+document.getElementById("openAdminUserBtn").addEventListener("click", () => openModal("adminUserModal"));
 
 document.addEventListener("click", (event) => {
   const close = event.target.closest("[data-close]");
@@ -643,6 +685,21 @@ document.getElementById("moneyForm").addEventListener("submit", (event) => {
   saveAccount();
   renderAll();
   setMessage("账户资金已保存", "ok");
+});
+
+document.getElementById("adminUserForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await createManagedUser(
+      document.getElementById("newManagedUsername").value,
+      document.getElementById("newManagedPassword").value
+    );
+    event.target.reset();
+    closeModal("adminUserModal");
+    setMessage("用户已新增", "ok");
+  } catch (error) {
+    setMessage(error instanceof Error ? error.message : String(error), "error");
+  }
 });
 
 document.getElementById("positionsList").addEventListener("click", (event) => {
@@ -682,19 +739,7 @@ document.getElementById("positionsList").addEventListener("click", (event) => {
 document.getElementById("passwordForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
-    if (!currentUser) throw new Error("请先登录");
-    const oldPassword = document.getElementById("oldPassword").value;
-    const newPassword = document.getElementById("newPassword").value;
-    if (String(newPassword || "").length < 4) throw new Error("新密码至少 4 位");
-    const oldHash = await hashPassword(currentUser.key, oldPassword);
-    if (oldHash !== currentUser.passwordHash) throw new Error("旧密码不正确");
-    const users = loadUsers();
-    currentUser.passwordHash = await hashPassword(currentUser.key, newPassword);
-    users[currentUser.key] = currentUser;
-    saveUsers(users);
-    event.target.reset();
-    closeModal("passwordModal");
-    setMessage("密码已修改", "ok");
+    throw new Error("预置账号暂不支持自助改密");
   } catch (error) {
     setMessage(error instanceof Error ? error.message : String(error), "error");
   }
@@ -719,12 +764,15 @@ document.getElementById("tradeForm").addEventListener("submit", (event) => {
 
 function init() {
   const sessionKey = localStorage.getItem(SESSION_KEY);
-  const users = loadUsers();
+  authToken = localStorage.getItem(AUTH_TOKEN_KEY) || "";
+  const users = loadProfileCache();
   currentUser = sessionKey && users[sessionKey] ? users[sessionKey] : null;
   if (currentUser) loadUserData();
   renderAll();
   schedulePositionRefresh();
+  if (currentUser && currentUser.role === "admin") loadAdminUsers();
   if (!currentUser && new URLSearchParams(location.search).has("login")) {
+    openModal("loginModal");
     document.getElementById("accountUsername").focus();
   }
 }

@@ -3,6 +3,8 @@ const fs = require("fs");
 const path = require("path");
 const recommendations = require("../api/recommendations");
 const quotes = require("../api/quotes");
+const authLogin = require("../api/auth/login");
+const authManageUsers = require("../api/auth/manage-users");
 
 const root = path.resolve(__dirname, "..", "ui-prototype");
 const port = Number(process.env.PORT || 4173);
@@ -67,6 +69,14 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.url.startsWith("/api/quotes")) {
     await quotes(req, apiResponse(res));
+    return;
+  }
+  if (req.url.startsWith("/api/auth/login")) {
+    await authLogin(req, apiResponse(res));
+    return;
+  }
+  if (req.url.startsWith("/api/auth/manage-users")) {
+    await authManageUsers(req, apiResponse(res));
     return;
   }
   serveFile(req, res);

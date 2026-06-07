@@ -1,5 +1,5 @@
 const externalSites = ["东方财富", "同花顺", "雪球"];
-const USERS_KEY = "lateDay.users.v1";
+const PROFILE_CACHE_KEY = "lateDay.userProfiles.v1";
 const SESSION_KEY = "lateDay.session.v1";
 const GUEST_ID = "guest";
 const SCHEDULE_CHECK_MS = 60 * 1000;
@@ -49,10 +49,6 @@ function readJson(key, fallback) {
 
 function writeJson(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
-}
-
-function normalizeUsername(value) {
-  return String(value || "").trim().toLowerCase();
 }
 
 function userScope() {
@@ -166,7 +162,7 @@ function updateAuthUi() {
   if (label) label.textContent = currentUser ? currentUser.username.slice(0, 6) : "登录";
   if (accountLink) accountLink.textContent = currentUser ? currentUser.username.slice(0, 6) : "账户";
   if (title) title.textContent = currentUser ? "用户中心" : "用户登录";
-  if (subtitle) subtitle.textContent = currentUser ? "自选和看板状态已按账号隔离" : "本机保存，按账号隔离自选和看板状态";
+  if (subtitle) subtitle.textContent = currentUser ? "自选和看板状态已按账号隔离" : "主页公开浏览，登录后记录买入和自选";
   if (logoutBtn) logoutBtn.classList.toggle("hidden", !currentUser);
   renderPortfolio();
 }
@@ -211,22 +207,18 @@ function renderPortfolio() {
   `).join("");
 }
 
-async function hashPassword(username, password) {
-  const payload = `late-day-buying:${normalizeUsername(username)}:${password}`;
-  if (window.crypto && window.crypto.subtle) {
-    const bytes = new TextEncoder().encode(payload);
-    const hash = await window.crypto.subtle.digest("SHA-256", bytes);
-    return Array.from(new Uint8Array(hash)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
-  }
-  return btoa(unescape(encodeURIComponent(payload)));
+function loadProfileCache() {
+  return readJson(PROFILE_CACHE_KEY, {});
 }
 
-function loadUsers() {
-  return readJson(USERS_KEY, {});
+function saveProfileCache(users) {
+  writeJson(PROFILE_CACHE_KEY, users);
 }
 
-function saveUsers(users) {
-  writeJson(USERS_KEY, users);
+function cacheUserProfile(user) {
+  const users = loadProfileCache();
+  users[user.key] = user;
+  saveProfileCache(users);
 }
 
 function startUserSession(user) {
@@ -311,32 +303,28 @@ function recordBuy(quantity, price) {
   updateAuthUi();
 }
 
-async function registerUser(username, password) {
-  const key = normalizeUsername(username);
-  if (!key || key.length < 2) throw new Error("账号至少 2 个字符");
-  if (String(password || "").length < 4) throw new Error("密码至少 4 位");
-  const users = loadUsers();
-  if (users[key]) throw new Error("账号已存在，请直接登录");
-  const user = {
-    key,
-    id: `u_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-    username: String(username).trim(),
-    passwordHash: await hashPassword(key, password),
-    createdAt: new Date().toISOString()
-  };
-  users[key] = user;
-  saveUsers(users);
-  startUserSession(user);
-  setAuthMessage("注册成功，已登录", "ok");
-}
-
 async function loginUser(username, password) {
-  const key = normalizeUsername(username);
-  const users = loadUsers();
-  const user = users[key];
-  if (!user) throw new Error("账号不存在");
-  const hash = await hashPassword(key, password);
-  if (hash !== user.passwordHash) throw new Error("密码不正确");
+  let response;
+  try {
+    response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password })
+    });
+  } catch {
+    throw new Error("登录接口不可用，请用 npm run dev 后打开 http://localhost:4173/account.html");
+  }
+  const text = await response.text();
+  let payload = {};
+  try {
+    payload = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error("登录接口返回异常，请确认不是直接打开 HTML 文件");
+  }
+  const user = response.ok ? payload.user : null;
+  if (!user) throw new Error(payload.error || "账号或密码不正确");
+  if (!user) throw new Error("登录接口未返回用户信息");
+  cacheUserProfile(user);
   startUserSession(user);
   setAuthMessage("登录成功", "ok");
 }
@@ -353,7 +341,7 @@ function logoutUser() {
 
 function initAuth() {
   const sessionKey = localStorage.getItem(SESSION_KEY);
-  const users = loadUsers();
+  const users = loadProfileCache();
   currentUser = sessionKey && users[sessionKey] ? users[sessionKey] : null;
   loadUserState();
   updateAuthUi();
@@ -764,17 +752,6 @@ if (authForm) authForm.addEventListener("submit", async (event) => {
   const password = document.getElementById("authPassword").value;
   try {
     await loginUser(username, password);
-  } catch (error) {
-    setAuthMessage(error instanceof Error ? error.message : String(error), "error");
-  }
-});
-
-const registerBtn = document.getElementById("registerBtn");
-if (registerBtn) registerBtn.addEventListener("click", async () => {
-  const username = document.getElementById("authUsername").value;
-  const password = document.getElementById("authPassword").value;
-  try {
-    await registerUser(username, password);
   } catch (error) {
     setAuthMessage(error instanceof Error ? error.message : String(error), "error");
   }

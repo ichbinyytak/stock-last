@@ -47,16 +47,27 @@ dist/
 
 `vercel.json` 已经写好这些默认项，通常导入仓库后保持默认即可。
 
-## 用户数据
+## 登录和用户管理
 
-当前版本的注册登录是前端本机隔离：
+当前版本使用简单的服务端账号系统：
 
-1. 用户账号保存在浏览器 `localStorage`。
-2. 自选股票、账户资金、可编辑持仓、买入卖出历史、当前选中股票、详情展开状态按用户 ID 分开保存。
-3. 部署到 Vercel 不需要数据库和环境变量。
-4. 多设备同步、找回密码和服务端权限控制需要后续接入 Supabase、Vercel KV 或其他 Auth/DB 服务。
-5. 买入卖出记录只用于学习复盘，不会连接券商或真实下单。
-6. 用户中心页面：`account.html`，预留了卖盘建议模块。
+1. 超级用户固定为 `admin / fsheng`，定义在 `api/auth/users.js`。
+2. 普通用户由超级用户在用户中心新增。
+3. 登录接口是 `/api/auth/login`。
+4. 用户管理接口是 `/api/auth/manage-users`，需要 admin 登录 token。
+5. 默认托管用户 `test / 123` 会显示在 admin 用户管理列表里。
+
+管理员新增/重设用户需要服务器存储。部署到 Vercel 时，请配置 Vercel KV 或 Upstash Redis 的 REST 环境变量：
+
+```text
+KV_REST_API_URL
+KV_REST_API_TOKEN
+AUTH_SECRET
+```
+
+`AUTH_SECRET` 用于签发登录 token，可设置为任意足够长的随机字符串。
+
+注意：资金、持仓、买卖历史当前仍按用户 ID 保存在浏览器 `localStorage`，只用于学习复盘，不会连接券商或真实下单。下一步如果需要多设备同步，再把账户数据迁到服务器数据库。
 
 ## 当前结构
 
@@ -64,4 +75,6 @@ dist/
 2. 样式：`ui-prototype/style.css`
 3. 前端交互：`ui-prototype/app.js`
 4. 实时推荐 API：`api/recommendations.js`
-5. 本地开发服务：`scripts/dev-server.js`
+5. 登录 API：`api/auth/login.js`
+6. 用户管理 API：`api/auth/manage-users.js`
+7. 本地开发服务：`scripts/dev-server.js`

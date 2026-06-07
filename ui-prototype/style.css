@@ -699,7 +699,7 @@ p {
 
 .auth-modal.hidden,
 .hidden {
-  display: none;
+  display: none !important;
 }
 
 .auth-card {
@@ -994,6 +994,34 @@ p {
   font-weight: 800;
   line-height: 1;
   white-space: nowrap;
+}
+
+.account-login-note {
+  color: var(--muted);
+  border: 1px dashed var(--line);
+  border-radius: 7px;
+  padding: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.admin-user-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-user-line .secondary-btn {
+  min-height: 24px;
+  padding: 2px 7px;
+  font-size: 11px;
+}
+
+.admin-user-row {
+  grid-template-columns: 34px minmax(58px, 1fr) 58px minmax(74px, 1fr) 36px;
 }
 
 .editable-list,
