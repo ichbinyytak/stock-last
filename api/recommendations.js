@@ -7,6 +7,7 @@ const HOSTS = [
   "https://82.push2.eastmoney.com",
   "https://87.push2.eastmoney.com"
 ];
+const { normalizeSelectionStrategy } = require("./strategy-config");
 
 const UT = "bd1d9ddb04089700cf9c27f6f7426281";
 const BOARD_FIELDS = "f12,f14,f2,f3,f4,f8,f20,f104,f105,f128,f140";
@@ -331,12 +332,17 @@ function isNearLimit(row) {
   return false;
 }
 
-function isLateDayCandidate(row) {
+function isLateDayCandidate(row, strategy) {
   const change = pct(row);
   const turnover = number(row.f8, 0);
+  const volumeRatio = number(row.f10, 0);
   if (!isTradableStock(row)) return false;
-  if (isNearLimit(row)) return false;
-  return change >= 3 && change <= 18.8 && turnover >= 2;
+  if (strategy.avoidNearLimit && isNearLimit(row)) return false;
+  return change >= strategy.minStockChangePct
+    && change <= strategy.maxStockChangePct
+    && turnover >= strategy.minTurnoverPct
+    && turnover <= strategy.maxTurnoverPct
+    && volumeRatio >= strategy.minVolumeRatio;
 }
 
 function formatMoney(value) {
@@ -549,7 +555,7 @@ function stockRisk(row, state) {
   return "补涨";
 }
 
-function stockScore(row, boardScore, state, trend = dailyTrendUnknown()) {
+function stockScore(row, boardScore, state, trend = dailyTrendUnknown(), strategy = normalizeSelectionStrategy()) {
   const change = Math.max(pct(row), 0);
   const turnover = number(row.f8, 0);
   const volumeRatio = number(row.f10, 0);
@@ -563,7 +569,8 @@ function stockScore(row, boardScore, state, trend = dailyTrendUnknown()) {
   const turnoverScore = turnover >= 5 && turnover <= 22 ? 10 : turnover > 22 ? 5 : 6;
   const positionScore = change >= 5 && change <= 16 ? 8 : change > 18 ? 2 : 4;
   const trendScore = trend.bullish ? 5 : trend.label === "待确认" ? 0 : -2;
-  return Math.round(Math.min(96, boardScore * 0.33 + stateScore + change * 0.55 + turnoverScore + positionScore + Math.min(volumeRatio, 5) + trendScore));
+  const elasticScore = strategy.preferElastic20cm && is20Or30(row.f12) ? 3 : 0;
+  return Math.round(Math.min(96, boardScore * 0.33 + stateScore + change * 0.55 + turnoverScore + positionScore + Math.min(volumeRatio, 5) + trendScore + elasticScore));
 }
 
 function stockConfidence(score, risk, market) {
@@ -644,10 +651,10 @@ function nextDayPlan(market) {
   return ["强竞价：第一波冲高分批兑现", "平竞价：观察10-30分钟量价承接", "弱竞价：优先卖出，不把尾盘短线做成长线"];
 }
 
-function mapStock(row, board, market, trend = dailyTrendUnknown()) {
+function mapStock(row, board, market, trend = dailyTrendUnknown(), strategy = normalizeSelectionStrategy()) {
   const state = stockState(row);
   const risk = stockRisk(row, state);
-  const score = stockScore(row, board.score, state, trend);
+  const score = stockScore(row, board.score, state, trend, strategy);
   const action = stockAction(score, risk, state, board, market);
   const confidence = stockConfidence(score, risk, market);
   const trigger = stockTrigger(row, market);
@@ -674,7 +681,8 @@ function mapStock(row, board, market, trend = dailyTrendUnknown()) {
   };
 }
 
-async function buildRecommendations() {
+async function buildRecommendations(selectionInput = {}) {
+  const selectionStrategy = normalizeSelectionStrategy(selectionInput);
   const fastest = await chooseHost();
   const now = new Date();
   const market = marketStatus(now);
@@ -696,11 +704,14 @@ async function buildRecommendations() {
     })
   );
 
-  const scored = await Promise.all(normalizeScores(enriched)
+  const scoredRows = await Promise.all(normalizeScores(enriched)
     .sort((a, b) => b.score - a.score)
-    .slice(0, 3)
+    .slice(0, 8)
     .map(async (item, index) => {
       const metrics = boardMetrics(item.board, item.rows);
+      if (item.score < selectionStrategy.minBoardScore) return null;
+      if (Math.round(metrics.breadth * 100) < selectionStrategy.minBoardBreadthPct) return null;
+      if (metrics.active < selectionStrategy.minActiveStocks) return null;
       const front20 = metrics.front20;
       const support10 = metrics.support10;
       const risk = boardRisk(item.board, front20, support10);
@@ -734,16 +745,24 @@ async function buildRecommendations() {
         }
       };
       const candidateRows = item.rows
-        .filter(isLateDayCandidate)
+        .filter((row) => isLateDayCandidate(row, selectionStrategy))
         .sort((a, b) => pct(b) - pct(a))
-        .slice(0, 8);
+        .slice(0, 12);
       const trends = await Promise.all(candidateRows.map((row) => fetchDailyTrend(row.f12)));
       const stocks = candidateRows
-        .map((row, rowIndex) => mapStock(row, board, market, trends[rowIndex]))
+        .map((row, rowIndex) => mapStock(row, board, market, trends[rowIndex], selectionStrategy))
+        .filter((stock) => stock.score >= selectionStrategy.minStockScore)
+        .filter((stock) => !selectionStrategy.requireBullTrend || stock.trend && stock.trend.bullish)
+        .filter((stock) => !selectionStrategy.strictLateWindow || market.mode === "late-day" || stock.action === "尾盘候选")
         .sort((a, b) => b.score - a.score || Number(b.trend.bullish) - Number(a.trend.bullish) || b.change - a.change)
         .slice(0, 5);
+      if (!stocks.length) return null;
       return { ...board, stocks };
     }));
+  const scored = scoredRows
+    .filter(Boolean)
+    .slice(0, 3)
+    .map((board, index) => ({ ...board, rank: index + 1 }));
   const phase = phaseAdvice(market);
 
   return {
@@ -754,10 +773,19 @@ async function buildRecommendations() {
       phase: market.label,
       action: phase.summary,
       topLine: scored[0] ? `${scored[0].name}：${scored[0].action}` : "暂无主线",
-      note: "页面结果由尾盘买入法规则实时生成，不使用模拟数据"
+      note: "页面结果由尾盘买入法规则实时生成，不使用模拟数据",
+      selectionStrategy
     },
     boards: scored
   };
+}
+
+function selectionStrategyFromUrl(url) {
+  const raw = {};
+  for (const [key, value] of url.searchParams.entries()) {
+    if (key.startsWith("s_")) raw[key.slice(2)] = value;
+  }
+  return normalizeSelectionStrategy(raw);
 }
 
 async function handler(req, res) {
@@ -767,7 +795,8 @@ async function handler(req, res) {
   }
 
   try {
-    const result = await buildRecommendations();
+    const url = new URL(req.url, "http://localhost");
+    const result = await buildRecommendations(selectionStrategyFromUrl(url));
     res.setHeader("Cache-Control", "no-store");
     res.status(200).json(result);
   } catch (error) {

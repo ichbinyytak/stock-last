@@ -18,6 +18,8 @@ let paperMode = false;
 let paperSnapshot = null;
 let paperStrategy = {};
 let strategyFields = [];
+let selectionStrategy = {};
+let selectionStrategyFields = [];
 let editingCode = "";
 let quoteTimer = null;
 
@@ -221,6 +223,8 @@ function loadUserData() {
   paperSnapshot = null;
   paperStrategy = {};
   strategyFields = [];
+  selectionStrategy = {};
+  selectionStrategyFields = [];
 }
 
 function savePositions() {
@@ -317,6 +321,8 @@ function syncPaperAccount(snapshot) {
   paperEvents = Array.isArray(snapshot.events) ? snapshot.events : [];
   paperStrategy = snapshot.strategy || {};
   strategyFields = Array.isArray(snapshot.strategyFields) ? snapshot.strategyFields : [];
+  selectionStrategy = snapshot.selectionStrategy || {};
+  selectionStrategyFields = Array.isArray(snapshot.selectionStrategyFields) ? snapshot.selectionStrategyFields : [];
 }
 
 async function loadPaperAccount(run = false, reschedule = true) {
@@ -349,7 +355,24 @@ async function savePaperStrategy(strategy) {
   if (!response.ok) throw new Error(payload.error || "保存策略失败");
   syncPaperAccount(payload.account);
   renderAll();
-  setMessage("策略参数已保存", "ok");
+  setMessage("操作策略参数已保存", "ok");
+}
+
+async function saveSelectionStrategy(nextSelectionStrategy) {
+  if (!currentUser || !paperMode) throw new Error("只有 test 自动模拟盘可以调整选股策略");
+  const response = await fetch("/api/paper-trading", {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${authToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ selectionStrategy: nextSelectionStrategy })
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || "保存选股策略失败");
+  syncPaperAccount(payload.account);
+  renderAll();
+  setMessage("选股策略参数已保存，回到看板刷新后生效", "ok");
 }
 
 function logoutUser() {
@@ -364,6 +387,8 @@ function logoutUser() {
   paperEvents = [];
   paperStrategy = {};
   strategyFields = [];
+  selectionStrategy = {};
+  selectionStrategyFields = [];
   localStorage.removeItem(SESSION_KEY);
   localStorage.removeItem(AUTH_TOKEN_KEY);
   positions = {};
@@ -403,12 +428,14 @@ function renderAll() {
   document.getElementById("syncPaperBtn").classList.toggle("hidden", !paperMode);
   document.getElementById("runPaperBtn").classList.toggle("hidden", !paperMode);
   document.getElementById("paperStrategySection").classList.toggle("hidden", !paperMode);
+  document.getElementById("selectionStrategySection").classList.toggle("hidden", !paperMode);
   document.getElementById("accountLoginNote").classList.toggle("hidden", logged);
   document.querySelectorAll(".auth-only").forEach((node) => node.classList.toggle("hidden", !logged));
   document.getElementById("adminSection").classList.toggle("hidden", !isAdmin);
   document.querySelectorAll(".locked").forEach((node) => node.classList.toggle("disabled", !logged));
   renderPaperStatus();
   renderStrategyPanel();
+  renderSelectionStrategyPanel();
 
   document.getElementById("initialCapital").value = logged ? Number(account.initialCapital || 0).toFixed(2) : "";
   document.getElementById("cashAmount").value = logged ? Number(account.cash || 0).toFixed(2) : "";
@@ -457,7 +484,7 @@ function renderStrategyPanel() {
     return;
   }
   if (!strategyFields.length) {
-    list.innerHTML = `<div class="portfolio-empty">策略参数同步后显示</div>`;
+    list.innerHTML = `<div class="portfolio-empty">操作策略参数同步后显示</div>`;
     return;
   }
   list.innerHTML = strategyFields.map((field) => {
@@ -471,6 +498,33 @@ function renderStrategyPanel() {
         ${control}
         <span>${field.unit || ""}</span>
         <button class="secondary-btn strategy-detail-btn" data-strategy-detail="${field.key}" type="button">详情</button>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderSelectionStrategyPanel() {
+  const list = document.getElementById("selectionStrategyList");
+  if (!list) return;
+  if (!paperMode) {
+    list.innerHTML = "";
+    return;
+  }
+  if (!selectionStrategyFields.length) {
+    list.innerHTML = `<div class="portfolio-empty">选股策略参数同步后显示</div>`;
+    return;
+  }
+  list.innerHTML = selectionStrategyFields.map((field) => {
+    const value = selectionStrategy[field.key] ?? field.defaultValue;
+    const control = field.type === "boolean"
+      ? `<label class="strategy-toggle"><input data-selection-key="${field.key}" type="checkbox" ${value ? "checked" : ""}><span>${value ? "开" : "关"}</span></label>`
+      : `<input data-selection-key="${field.key}" type="number" min="${field.min}" max="${field.max}" step="${field.step}" value="${Number(value)}">`;
+    return `
+      <div class="strategy-row">
+        <strong>${field.label}</strong>
+        ${control}
+        <span>${field.unit || ""}</span>
+        <button class="secondary-btn strategy-detail-btn" data-selection-detail="${field.key}" type="button">详情</button>
       </div>
     `;
   }).join("");
@@ -490,8 +544,24 @@ function readStrategyForm(useDefaults = false) {
   return next;
 }
 
-function openStrategyDetail(key) {
-  const field = strategyFields.find((item) => item.key === key);
+function readSelectionStrategyForm(useDefaults = false) {
+  const next = {};
+  selectionStrategyFields.forEach((field) => {
+    if (useDefaults) {
+      next[field.key] = field.defaultValue;
+      return;
+    }
+    const input = document.querySelector(`[data-selection-key="${field.key}"]`);
+    if (!input) return;
+    next[field.key] = field.type === "boolean" ? input.checked : Number(input.value);
+  });
+  return next;
+}
+
+function openStrategyDetail(key, group = "operation") {
+  const fields = group === "selection" ? selectionStrategyFields : strategyFields;
+  const values = group === "selection" ? selectionStrategy : paperStrategy;
+  const field = fields.find((item) => item.key === key);
   if (!field) return;
   document.getElementById("strategyDetailTitle").textContent = field.label;
   document.getElementById("strategyDetailSub").textContent = `默认 ${field.defaultValue}${field.unit || ""} · 范围 ${field.type === "boolean" ? "开/关" : `${field.min}-${field.max}${field.unit || ""}`}`;
@@ -499,7 +569,7 @@ function openStrategyDetail(key) {
     <p class="sell-detail-main">${field.detail}</p>
     <div class="sell-detail-kv">
       <span>参数名</span><strong>${field.key}</strong>
-      <span>当前值</span><strong>${paperStrategy[field.key] ?? field.defaultValue}${field.unit || ""}</strong>
+      <span>当前值</span><strong>${values[field.key] ?? field.defaultValue}${field.unit || ""}</strong>
       <span>默认值</span><strong>${field.defaultValue}${field.unit || ""}</strong>
       <span>步进</span><strong>${field.type === "boolean" ? "开关" : field.step}</strong>
     </div>
@@ -861,16 +931,41 @@ document.getElementById("resetStrategyBtn").addEventListener("click", () => {
     setMessage(error instanceof Error ? error.message : String(error), "error");
   });
 });
+document.getElementById("saveSelectionStrategyBtn").addEventListener("click", () => {
+  saveSelectionStrategy(readSelectionStrategyForm(false)).catch((error) => {
+    setMessage(error instanceof Error ? error.message : String(error), "error");
+  });
+});
+document.getElementById("resetSelectionStrategyBtn").addEventListener("click", () => {
+  saveSelectionStrategy(readSelectionStrategyForm(true)).catch((error) => {
+    setMessage(error instanceof Error ? error.message : String(error), "error");
+  });
+});
 
 document.getElementById("strategyList").addEventListener("click", (event) => {
   const detail = event.target.closest("[data-strategy-detail]");
   if (detail) {
-    openStrategyDetail(detail.dataset.strategyDetail);
+    openStrategyDetail(detail.dataset.strategyDetail, "operation");
   }
 });
 
 document.getElementById("strategyList").addEventListener("change", (event) => {
   if (event.target.matches('input[type="checkbox"][data-strategy-key]')) {
+    const label = event.target.closest(".strategy-toggle");
+    const text = label && label.querySelector("span");
+    if (text) text.textContent = event.target.checked ? "开" : "关";
+  }
+});
+
+document.getElementById("selectionStrategyList").addEventListener("click", (event) => {
+  const detail = event.target.closest("[data-selection-detail]");
+  if (detail) {
+    openStrategyDetail(detail.dataset.selectionDetail, "selection");
+  }
+});
+
+document.getElementById("selectionStrategyList").addEventListener("change", (event) => {
+  if (event.target.matches('input[type="checkbox"][data-selection-key]')) {
     const label = event.target.closest(".strategy-toggle");
     const text = label && label.querySelector("span");
     if (text) text.textContent = event.target.checked ? "开" : "关";

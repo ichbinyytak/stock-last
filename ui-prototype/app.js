@@ -1,6 +1,7 @@
 const externalSites = ["东方财富", "同花顺", "雪球"];
 const PROFILE_CACHE_KEY = "lateDay.userProfiles.v1";
 const SESSION_KEY = "lateDay.session.v1";
+const AUTH_TOKEN_KEY = "lateDay.authToken.v1";
 const GUEST_ID = "guest";
 const SCHEDULE_CHECK_MS = 60 * 1000;
 
@@ -16,6 +17,8 @@ let expanded = {
 let strategySummary = null;
 let isLoading = false;
 let currentUser = null;
+let authToken = "";
+let selectionStrategy = {};
 let favorites = new Set();
 let positions = {};
 let buyTarget = null;
@@ -221,13 +224,16 @@ function cacheUserProfile(user) {
   saveProfileCache(users);
 }
 
-function startUserSession(user) {
+function startUserSession(user, token = authToken) {
   currentUser = user;
+  authToken = token || "";
   localStorage.setItem(SESSION_KEY, user.key);
+  if (authToken) localStorage.setItem(AUTH_TOKEN_KEY, authToken);
   loadUserState();
   ensureSelection();
   updateAuthUi();
   renderBoards();
+  loadPaperSelectionStrategy().finally(() => loadRecommendations({ force: true }));
 }
 
 function showLoginRequired() {
@@ -325,26 +331,49 @@ async function loginUser(username, password) {
   if (!user) throw new Error(payload.error || "账号或密码不正确");
   if (!user) throw new Error("登录接口未返回用户信息");
   cacheUserProfile(user);
-  startUserSession(user);
+  startUserSession(user, payload.token || "");
   setAuthMessage("登录成功", "ok");
 }
 
 function logoutUser() {
   currentUser = null;
+  authToken = "";
+  selectionStrategy = {};
   localStorage.removeItem(SESSION_KEY);
+  localStorage.removeItem(AUTH_TOKEN_KEY);
   loadUserState();
   ensureSelection();
   updateAuthUi();
   renderBoards();
+  loadRecommendations({ force: true });
   setAuthMessage("已退出，当前使用访客数据", "ok");
 }
 
 function initAuth() {
   const sessionKey = localStorage.getItem(SESSION_KEY);
+  authToken = localStorage.getItem(AUTH_TOKEN_KEY) || "";
   const users = loadProfileCache();
   currentUser = sessionKey && users[sessionKey] ? users[sessionKey] : null;
   loadUserState();
   updateAuthUi();
+}
+
+async function loadPaperSelectionStrategy() {
+  if (!currentUser || currentUser.key !== "test" || !authToken) {
+    selectionStrategy = {};
+    return;
+  }
+  try {
+    const response = await fetch("/api/paper-trading", {
+      headers: { Authorization: `Bearer ${authToken}` },
+      cache: "no-store"
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "选股策略读取失败");
+    selectionStrategy = payload.account && payload.account.selectionStrategy ? payload.account.selectionStrategy : {};
+  } catch {
+    selectionStrategy = {};
+  }
 }
 
 function riskClass(risk) {
@@ -659,13 +688,21 @@ function selectStock(boardId, stockCode) {
   renderBoards();
 }
 
+function recommendationsUrl() {
+  const params = new URLSearchParams({ t: String(Date.now()) });
+  Object.entries(selectionStrategy || {}).forEach(([key, value]) => {
+    params.set(`s_${key}`, String(value));
+  });
+  return `/api/recommendations?${params}`;
+}
+
 async function loadRecommendations(options = {}) {
   if (isLoading && !options.force) return;
   isLoading = true;
   updateMarketStatus();
   if (!boards.length || options.force) setLoading();
   try {
-    const response = await fetch(`/api/recommendations?t=${Date.now()}`, {
+    const response = await fetch(recommendationsUrl(), {
       cache: "no-store"
     });
     const payload = await response.json();
@@ -782,7 +819,13 @@ document.getElementById("buyForm").addEventListener("submit", (event) => {
   }
 });
 
-initAuth();
-chooseFastSite();
-updateMarketStatus();
-loadRecommendations().finally(scheduleBoardRefresh);
+async function init() {
+  initAuth();
+  chooseFastSite();
+  updateMarketStatus();
+  await loadPaperSelectionStrategy();
+  await loadRecommendations();
+  scheduleBoardRefresh();
+}
+
+init();

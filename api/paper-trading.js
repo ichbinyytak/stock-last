@@ -1,47 +1,20 @@
 const { bearerUser } = require("./auth/session");
 const recommendations = require("./recommendations");
 const quotesApi = require("./quotes");
+const {
+  fieldsWithDefaults,
+  OPERATION_STRATEGY_FIELDS,
+  SELECTION_STRATEGY_FIELDS,
+  DEFAULT_OPERATION_STRATEGY,
+  DEFAULT_SELECTION_STRATEGY,
+  normalizeOperationStrategy,
+  normalizeSelectionStrategy
+} = require("./strategy-config");
 
 const ACCOUNT_KEY = "lateDay:paperAccount:test:v1";
 const INITIAL_CAPITAL = 100000;
 const MAX_TRADES = 1000;
 const MAX_EVENTS = 1200;
-
-const DEFAULT_STRATEGY = {
-  maxPositions: 3,
-  maxPositionPct: 30,
-  minChangePct: 3,
-  maxChangePct: 18.8,
-  minBoardScore: 84,
-  minStockScore: 84,
-  minConfidence: 70,
-  maxTurnoverPct: 25,
-  requireBullTrend: true,
-  buyOncePerDay: true,
-  strongPnlPct: 2,
-  strongOpenPct: 1.5,
-  strongQuoteChangePct: 3,
-  flatPnlFloorPct: -1,
-  flatOpenFloorPct: -1.2
-};
-
-const STRATEGY_FIELDS = [
-  { key: "maxPositions", label: "最大持仓", type: "integer", min: 1, max: 8, step: 1, unit: "只", detail: "限制模拟盘同时持有的股票数量。默认 3 只，越大越分散，越小越集中。" },
-  { key: "maxPositionPct", label: "单票仓位", type: "number", min: 5, max: 80, step: 1, unit: "%", detail: "单只股票最多使用初始本金的比例。默认 30%，100000 元本金时单票最多约 30000 元。" },
-  { key: "minChangePct", label: "最低涨幅", type: "number", min: 0, max: 15, step: 0.1, unit: "%", detail: "候选股票当日涨幅下限。默认 3%，太低说明主动性不足。" },
-  { key: "maxChangePct", label: "最高涨幅", type: "number", min: 5, max: 19.5, step: 0.1, unit: "%", detail: "候选股票当日涨幅上限。默认 18.8%，用于避开涨停和近涨停的追高票。" },
-  { key: "minBoardScore", label: "板块评分", type: "integer", min: 60, max: 96, step: 1, unit: "分", detail: "所属板块最低强度评分。默认 84，要求板块先成为强方向。" },
-  { key: "minStockScore", label: "个股评分", type: "integer", min: 60, max: 96, step: 1, unit: "分", detail: "个股最低评分。默认 84，综合涨幅、换手、量比、状态和日线排列。" },
-  { key: "minConfidence", label: "置信度", type: "integer", min: 35, max: 92, step: 1, unit: "分", detail: "候选最低置信度。默认 70，用来过滤盘口阶段和风险扣分后的弱候选。" },
-  { key: "maxTurnoverPct", label: "最高换手", type: "number", min: 5, max: 60, step: 0.5, unit: "%", detail: "候选股票最高换手率。默认 25%，超过后容易放大次日分歧。" },
-  { key: "requireBullTrend", label: "日线多头", type: "boolean", unit: "", detail: "开启后只买日线多头排列股票。默认开启，对应 MA5 > MA10 > MA20 且收盘在 MA5 上方。" },
-  { key: "buyOncePerDay", label: "每日一次", type: "boolean", unit: "", detail: "开启后每天只在尾盘窗口执行一次新开仓。默认开启，避免反复运行重复买入。" },
-  { key: "strongPnlPct", label: "强势盈利", type: "number", min: 0, max: 10, step: 0.1, unit: "%", detail: "次日持仓浮盈达到该比例时标记强势兑现。默认 2%。" },
-  { key: "strongOpenPct", label: "强势开盘", type: "number", min: 0, max: 10, step: 0.1, unit: "%", detail: "次日开盘价相对成本达到该比例时标记强势兑现。默认 1.5%。" },
-  { key: "strongQuoteChangePct", label: "强势涨幅", type: "number", min: 0, max: 10, step: 0.1, unit: "%", detail: "次日个股实时涨幅达到该比例时标记强势兑现。默认 3%。" },
-  { key: "flatPnlFloorPct", label: "平盘盈亏", type: "number", min: -10, max: 5, step: 0.1, unit: "%", detail: "次日浮盈亏不低于该值时标记平盘确认。默认 -1%，低于则偏弱势风控。" },
-  { key: "flatOpenFloorPct", label: "平盘开盘", type: "number", min: -10, max: 5, step: 0.1, unit: "%", detail: "次日开盘相对成本不低于该值时标记平盘确认。默认 -1.2%，低于则偏弱势风控。" }
-];
 
 function kvConfigured() {
   return Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
@@ -79,9 +52,7 @@ function readBody(req) {
 }
 
 async function readStoredAccount() {
-  if (!kvConfigured()) {
-    throw new Error("未配置服务器模拟盘存储，请在 Vercel 配置 KV_REST_API_URL 和 KV_REST_API_TOKEN");
-  }
+  if (!kvConfigured()) return null;
   const payload = await kvRequest(`/get/${encodeURIComponent(ACCOUNT_KEY)}`);
   if (!payload.result) return null;
   return typeof payload.result === "string" ? JSON.parse(payload.result) : payload.result;
@@ -135,7 +106,8 @@ function createAccount() {
     mode: "paper",
     initialCapital: INITIAL_CAPITAL,
     cash: INITIAL_CAPITAL,
-    strategy: { ...DEFAULT_STRATEGY },
+    strategy: { ...DEFAULT_OPERATION_STRATEGY },
+    selectionStrategy: { ...DEFAULT_SELECTION_STRATEGY },
     positions: {},
     trades: [],
     events: [{
@@ -179,7 +151,7 @@ async function loadAccount() {
   const stored = await readStoredAccount();
   if (stored) return normalizeAccount(stored);
   const account = createAccount();
-  await writeStoredAccount(account);
+  if (kvConfigured()) await writeStoredAccount(account);
   return account;
 }
 
@@ -188,27 +160,12 @@ function normalizeAccount(account) {
     ...createAccount(),
     ...account,
     initialCapital: INITIAL_CAPITAL,
-    strategy: normalizeStrategy(account && account.strategy),
+    strategy: normalizeOperationStrategy(account && account.strategy),
+    selectionStrategy: normalizeSelectionStrategy(account && account.selectionStrategy),
     positions: account && account.positions && typeof account.positions === "object" ? account.positions : {},
     trades: Array.isArray(account && account.trades) ? account.trades : [],
     events: Array.isArray(account && account.events) ? account.events : []
   };
-}
-
-function normalizeStrategy(input = {}) {
-  const normalized = { ...DEFAULT_STRATEGY };
-  STRATEGY_FIELDS.forEach((field) => {
-    const raw = input[field.key];
-    if (field.type === "boolean") {
-      if (typeof raw === "boolean") normalized[field.key] = raw;
-      return;
-    }
-    const value = field.type === "integer" ? Math.round(Number(raw)) : Number(raw);
-    if (!Number.isFinite(value)) return;
-    normalized[field.key] = Math.min(field.max, Math.max(field.min, value));
-  });
-  if (normalized.maxChangePct <= normalized.minChangePct) normalized.maxChangePct = normalized.minChangePct + 0.5;
-  return normalized;
 }
 
 function positionRows(account) {
@@ -271,7 +228,7 @@ function sellTag(position, strategy) {
 }
 
 async function sellEligiblePositions(account) {
-  const strategy = normalizeStrategy(account.strategy);
+  const strategy = normalizeOperationStrategy(account.strategy);
   if (!isAfterOpen()) {
     recordEvent(account, "SKIP_SELL", "未到卖出窗口", "尾盘买入法默认等次日 9:30 后再处理持仓。");
     return 0;
@@ -316,7 +273,7 @@ async function sellEligiblePositions(account) {
 }
 
 function flattenCandidates(result, account) {
-  const strategy = normalizeStrategy(account.strategy);
+  const strategy = normalizeOperationStrategy(account.strategy);
   const held = new Set(Object.keys(account.positions || {}));
   return (result.boards || [])
     .flatMap((board) => (board.stocks || []).map((stock) => ({ board, stock })))
@@ -343,8 +300,8 @@ function buyQuantity(cash, price, slots, strategy) {
 }
 
 async function buyLateDayCandidates(account) {
-  const strategy = normalizeStrategy(account.strategy);
-  const result = await recommendations.buildRecommendations();
+  const strategy = normalizeOperationStrategy(account.strategy);
+  const result = await recommendations.buildRecommendations(normalizeSelectionStrategy(account.selectionStrategy));
   if (!result.market || result.market.mode !== "late-day") {
     recordEvent(account, "SKIP_BUY", "未到尾盘买入窗口", result.market ? result.market.note : "行情状态不可用", {
       marketMode: result.market && result.market.mode
@@ -444,11 +401,10 @@ function summary(account) {
 function publicAccount(account) {
   return {
     ...account,
-    strategy: normalizeStrategy(account.strategy),
-    strategyFields: STRATEGY_FIELDS.map((field) => ({
-      ...field,
-      defaultValue: DEFAULT_STRATEGY[field.key]
-    })),
+    strategy: normalizeOperationStrategy(account.strategy),
+    selectionStrategy: normalizeSelectionStrategy(account.selectionStrategy),
+    strategyFields: fieldsWithDefaults(OPERATION_STRATEGY_FIELDS, DEFAULT_OPERATION_STRATEGY),
+    selectionStrategyFields: fieldsWithDefaults(SELECTION_STRATEGY_FIELDS, DEFAULT_SELECTION_STRATEGY),
     summary: summary(account)
   };
 }
@@ -472,21 +428,25 @@ async function handler(req, res) {
     const account = await loadAccount();
     let run = null;
     if (req.method === "PUT") {
+      if (!kvConfigured()) throw new Error("未配置服务器模拟盘存储，请在 Vercel 配置 KV_REST_API_URL 和 KV_REST_API_TOKEN");
       const body = JSON.parse(await readBody(req) || "{}");
-      account.strategy = normalizeStrategy(body.strategy || body);
+      account.strategy = normalizeOperationStrategy(body.strategy || account.strategy);
+      account.selectionStrategy = normalizeSelectionStrategy(body.selectionStrategy || account.selectionStrategy);
       account.updatedAt = nowIso();
-      recordEvent(account, "STRATEGY", "策略参数已更新", "test 自动模拟盘策略参数已保存到服务器。", {
-        strategy: account.strategy
+      recordEvent(account, "STRATEGY", "策略参数已更新", "test 自动模拟盘的操作策略和选股策略参数已保存到服务器。", {
+        strategy: account.strategy,
+        selectionStrategy: account.selectionStrategy
       });
       await writeStoredAccount(account);
     } else if (url.searchParams.get("run") === "1" || req.method === "POST") {
+      if (!kvConfigured()) throw new Error("未配置服务器模拟盘存储，请在 Vercel 配置 KV_REST_API_URL 和 KV_REST_API_TOKEN");
       const phase = url.searchParams.get("phase") || "auto";
       run = await runStrategy(account, phase);
       await writeStoredAccount(account);
     } else if (!req.method || req.method === "GET") {
       await refreshPositionQuotes(account).catch(() => null);
       account.updatedAt = nowIso();
-      await writeStoredAccount(account);
+      if (kvConfigured()) await writeStoredAccount(account);
     } else {
       res.status(405).json({ error: "Method not allowed" });
       return;
