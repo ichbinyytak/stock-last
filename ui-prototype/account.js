@@ -3,6 +3,70 @@ const SESSION_KEY = "lateDay.session.v1";
 const AUTH_TOKEN_KEY = "lateDay.authToken.v1";
 const GUEST_ID = "guest";
 const SCHEDULE_CHECK_MS = 60 * 1000;
+const DEFAULT_OPERATION_STRATEGY = {
+  maxPositions: 3,
+  maxPositionPct: 30,
+  minChangePct: 3,
+  maxChangePct: 18.8,
+  minBoardScore: 84,
+  minStockScore: 84,
+  minConfidence: 70,
+  maxTurnoverPct: 25,
+  requireBullTrend: true,
+  buyOncePerDay: true,
+  strongPnlPct: 2,
+  strongOpenPct: 1.5,
+  strongQuoteChangePct: 3,
+  flatPnlFloorPct: -1,
+  flatOpenFloorPct: -1.2
+};
+const DEFAULT_SELECTION_STRATEGY = {
+  minStockChangePct: 3,
+  maxStockChangePct: 18.8,
+  minTurnoverPct: 2,
+  maxTurnoverPct: 25,
+  minVolumeRatio: 1,
+  minBoardScore: 78,
+  minStockScore: 76,
+  minBoardBreadthPct: 45,
+  minActiveStocks: 3,
+  requireBullTrend: true,
+  avoidNearLimit: true,
+  preferElastic20cm: true,
+  strictLateWindow: false
+};
+const DEFAULT_OPERATION_FIELDS = [
+  { key: "maxPositions", label: "最大持仓", type: "integer", min: 1, max: 8, step: 1, unit: "只", detail: "限制模拟盘同时持有的股票数量。" },
+  { key: "maxPositionPct", label: "单票仓位", type: "number", min: 5, max: 80, step: 1, unit: "%", detail: "单只股票最多使用初始本金的比例。" },
+  { key: "minChangePct", label: "买入最低涨幅", type: "number", min: 0, max: 15, step: 0.1, unit: "%", detail: "自动买入时的个股涨幅下限。" },
+  { key: "maxChangePct", label: "买入最高涨幅", type: "number", min: 5, max: 19.5, step: 0.1, unit: "%", detail: "自动买入时的个股涨幅上限，用于避开涨停和近涨停。" },
+  { key: "minBoardScore", label: "买入板块评分", type: "integer", min: 60, max: 96, step: 1, unit: "分", detail: "自动买入时所属板块最低强度评分。" },
+  { key: "minStockScore", label: "买入个股评分", type: "integer", min: 60, max: 96, step: 1, unit: "分", detail: "自动买入时个股最低评分。" },
+  { key: "minConfidence", label: "买入置信度", type: "integer", min: 35, max: 92, step: 1, unit: "分", detail: "自动买入时最低置信度。" },
+  { key: "maxTurnoverPct", label: "买入最高换手", type: "number", min: 5, max: 60, step: 0.5, unit: "%", detail: "自动买入时的最高换手率。" },
+  { key: "requireBullTrend", label: "买入日线多头", type: "boolean", unit: "", detail: "开启后自动买入只选日线多头排列股票。" },
+  { key: "buyOncePerDay", label: "每日一次买入", type: "boolean", unit: "", detail: "开启后每天只在尾盘窗口执行一次新开仓。" },
+  { key: "strongPnlPct", label: "强势盈利", type: "number", min: 0, max: 10, step: 0.1, unit: "%", detail: "次日持仓浮盈达到该比例时标记强势兑现。" },
+  { key: "strongOpenPct", label: "强势开盘", type: "number", min: 0, max: 10, step: 0.1, unit: "%", detail: "次日开盘价相对成本达到该比例时标记强势兑现。" },
+  { key: "strongQuoteChangePct", label: "强势涨幅", type: "number", min: 0, max: 10, step: 0.1, unit: "%", detail: "次日个股实时涨幅达到该比例时标记强势兑现。" },
+  { key: "flatPnlFloorPct", label: "平盘盈亏", type: "number", min: -10, max: 5, step: 0.1, unit: "%", detail: "次日浮盈亏不低于该值时标记平盘确认。" },
+  { key: "flatOpenFloorPct", label: "平盘开盘", type: "number", min: -10, max: 5, step: 0.1, unit: "%", detail: "次日开盘相对成本不低于该值时标记平盘确认。" }
+].map((field) => ({ ...field, defaultValue: DEFAULT_OPERATION_STRATEGY[field.key] }));
+const DEFAULT_SELECTION_FIELDS = [
+  { key: "minStockChangePct", label: "最低涨幅", type: "number", min: 0, max: 12, step: 0.1, unit: "%", detail: "看板选股的当日涨幅下限。" },
+  { key: "maxStockChangePct", label: "最高涨幅", type: "number", min: 5, max: 19.5, step: 0.1, unit: "%", detail: "看板选股的当日涨幅上限，用于放弃涨停和近涨停。" },
+  { key: "minTurnoverPct", label: "最低换手", type: "number", min: 0, max: 20, step: 0.1, unit: "%", detail: "看板选股的最低换手，用于确认活跃度。" },
+  { key: "maxTurnoverPct", label: "最高换手", type: "number", min: 5, max: 60, step: 0.5, unit: "%", detail: "看板选股的最高换手，过高容易表示分歧大。" },
+  { key: "minVolumeRatio", label: "最低量比", type: "number", min: 0, max: 8, step: 0.1, unit: "", detail: "看板选股的最低量比，用于确认资金活跃。" },
+  { key: "minBoardScore", label: "板块评分", type: "integer", min: 60, max: 96, step: 1, unit: "分", detail: "看板展示的最低板块强度。" },
+  { key: "minStockScore", label: "个股评分", type: "integer", min: 50, max: 96, step: 1, unit: "分", detail: "看板展示的最低个股评分。" },
+  { key: "minBoardBreadthPct", label: "上涨广度", type: "integer", min: 0, max: 90, step: 1, unit: "%", detail: "板块上涨家数占比下限。" },
+  { key: "minActiveStocks", label: "活跃家数", type: "integer", min: 0, max: 20, step: 1, unit: "只", detail: "板块中涨幅 5% 以上股票的最低数量。" },
+  { key: "requireBullTrend", label: "日线多头", type: "boolean", unit: "", detail: "开启后看板只显示日线多头排列候选。" },
+  { key: "avoidNearLimit", label: "避开近涨停", type: "boolean", unit: "", detail: "开启后涨停和近涨停只作板块锚点。" },
+  { key: "preferElastic20cm", label: "偏好20cm", type: "boolean", unit: "", detail: "开启后 20cm/30cm 弹性票评分略占优。" },
+  { key: "strictLateWindow", label: "仅尾盘候选", type: "boolean", unit: "", detail: "开启后只有尾盘窗口才显示买点候选。" }
+].map((field) => ({ ...field, defaultValue: DEFAULT_SELECTION_STRATEGY[field.key] }));
 
 let currentUser = null;
 let authToken = "";
@@ -16,10 +80,10 @@ let trades = [];
 let paperEvents = [];
 let paperMode = false;
 let paperSnapshot = null;
-let paperStrategy = {};
-let strategyFields = [];
-let selectionStrategy = {};
-let selectionStrategyFields = [];
+let paperStrategy = { ...DEFAULT_OPERATION_STRATEGY };
+let strategyFields = DEFAULT_OPERATION_FIELDS;
+let selectionStrategy = { ...DEFAULT_SELECTION_STRATEGY };
+let selectionStrategyFields = DEFAULT_SELECTION_FIELDS;
 let editingCode = "";
 let quoteTimer = null;
 
@@ -211,6 +275,13 @@ function closeModal(id) {
   if (modal) modal.classList.add("hidden");
 }
 
+function resetStrategyDefaults() {
+  paperStrategy = { ...DEFAULT_OPERATION_STRATEGY };
+  strategyFields = DEFAULT_OPERATION_FIELDS;
+  selectionStrategy = { ...DEFAULT_SELECTION_STRATEGY };
+  selectionStrategyFields = DEFAULT_SELECTION_FIELDS;
+}
+
 function loadUserData() {
   positions = readJson(scopedKey("positions"), {});
   account = readJson(scopedKey("account"), {
@@ -221,10 +292,7 @@ function loadUserData() {
   trades = readJson(scopedKey("trades"), []);
   paperEvents = [];
   paperSnapshot = null;
-  paperStrategy = {};
-  strategyFields = [];
-  selectionStrategy = {};
-  selectionStrategyFields = [];
+  resetStrategyDefaults();
 }
 
 function savePositions() {
@@ -319,10 +387,10 @@ function syncPaperAccount(snapshot) {
   positions = snapshot.positions || {};
   trades = Array.isArray(snapshot.trades) ? snapshot.trades : [];
   paperEvents = Array.isArray(snapshot.events) ? snapshot.events : [];
-  paperStrategy = snapshot.strategy || {};
-  strategyFields = Array.isArray(snapshot.strategyFields) ? snapshot.strategyFields : [];
-  selectionStrategy = snapshot.selectionStrategy || {};
-  selectionStrategyFields = Array.isArray(snapshot.selectionStrategyFields) ? snapshot.selectionStrategyFields : [];
+  paperStrategy = { ...DEFAULT_OPERATION_STRATEGY, ...(snapshot.strategy || {}) };
+  strategyFields = Array.isArray(snapshot.strategyFields) && snapshot.strategyFields.length ? snapshot.strategyFields : DEFAULT_OPERATION_FIELDS;
+  selectionStrategy = { ...DEFAULT_SELECTION_STRATEGY, ...(snapshot.selectionStrategy || {}) };
+  selectionStrategyFields = Array.isArray(snapshot.selectionStrategyFields) && snapshot.selectionStrategyFields.length ? snapshot.selectionStrategyFields : DEFAULT_SELECTION_FIELDS;
 }
 
 async function loadPaperAccount(run = false, reschedule = true) {
@@ -385,10 +453,7 @@ function logoutUser() {
   paperMode = false;
   paperSnapshot = null;
   paperEvents = [];
-  paperStrategy = {};
-  strategyFields = [];
-  selectionStrategy = {};
-  selectionStrategyFields = [];
+  resetStrategyDefaults();
   localStorage.removeItem(SESSION_KEY);
   localStorage.removeItem(AUTH_TOKEN_KEY);
   positions = {};
