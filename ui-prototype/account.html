@@ -15,96 +15,44 @@
           <p>资金 · 持仓 · 历史</p>
         </div>
       </div>
-
       <a class="auth-btn" href="./index.html">看板</a>
     </header>
 
     <main class="layout account-layout">
-      <section class="account-page">
-        <div class="section-head">
+      <section class="account-page compact">
+        <div class="account-hero">
           <div>
             <span class="eyebrow">Account</span>
             <h2 id="accountTitle">账户数据</h2>
+            <p id="authState">未登录</p>
           </div>
-          <p>本机保存，按账号隔离，后续可升级到服务端同步</p>
+          <div class="account-actions">
+            <button class="primary-btn" id="openLoginBtn" type="button">登录</button>
+            <button class="secondary-btn" id="openPasswordBtn" type="button">改密</button>
+            <button class="secondary-btn" id="accountLogoutBtn" type="button">退出</button>
+          </div>
         </div>
 
-        <section class="account-section" id="authSection">
-          <div class="section-line">
-            <strong>登录 / 注册</strong>
-            <span id="authState">未登录</span>
-          </div>
+        <div class="summary-grid compact-summary">
+          <div><span>总金额</span><strong id="sumInitial">--</strong></div>
+          <div><span>现金</span><strong id="sumCash">--</strong></div>
+          <div><span>持仓市值</span><strong id="sumMarket">--</strong></div>
+          <div><span>总资产</span><strong id="sumAssets">--</strong></div>
+          <div><span>浮动盈亏</span><strong id="sumFloat">--</strong></div>
+          <div><span>总盈亏</span><strong id="sumTotalPnl">--</strong></div>
+        </div>
 
-          <form class="account-form" id="accountAuthForm">
-            <label class="field">
-              <span>账号</span>
-              <input id="accountUsername" autocomplete="username" maxlength="24" required>
-            </label>
-            <label class="field">
-              <span>密码</span>
-              <input id="accountPassword" type="password" autocomplete="current-password" minlength="4" required>
-            </label>
-            <p class="auth-message" id="accountMessage"></p>
-            <div class="auth-actions">
-              <button class="primary-btn" type="submit">登录</button>
-              <button class="secondary-btn" id="accountRegisterBtn" type="button">注册</button>
-              <button class="secondary-btn" id="accountLogoutBtn" type="button">退出</button>
-            </div>
-          </form>
-        </section>
-
-        <section class="account-section locked" id="dataSection">
-          <div class="section-line">
-            <strong>账户资金</strong>
-            <span id="accountUserLabel">请先登录</span>
-          </div>
-
-          <form class="money-form" id="moneyForm">
-            <label class="field">
-              <span>账户总金额</span>
-              <input id="initialCapital" type="number" inputmode="decimal" min="0" step="0.01">
-            </label>
-            <label class="field">
-              <span>可用现金</span>
-              <input id="cashAmount" type="number" inputmode="decimal" step="0.01">
-            </label>
-            <button class="primary-btn" type="submit">保存资金</button>
-          </form>
-
-          <div class="summary-grid">
-            <div><span>账户总金额</span><strong id="sumInitial">--</strong></div>
-            <div><span>现金</span><strong id="sumCash">--</strong></div>
-            <div><span>持仓市值</span><strong id="sumMarket">--</strong></div>
-            <div><span>总资产</span><strong id="sumAssets">--</strong></div>
-            <div><span>浮动盈亏</span><strong id="sumFloat">--</strong></div>
-            <div><span>总盈亏</span><strong id="sumTotalPnl">--</strong></div>
-          </div>
-        </section>
+        <div class="toolbar-line">
+          <button class="primary-btn" id="openMoneyBtn" type="button">编辑资金</button>
+          <button class="secondary-btn" id="openTradeBtn" type="button">记录买卖</button>
+        </div>
 
         <section class="account-section locked" id="positionsSection">
           <div class="section-line">
-            <strong>持仓管理</strong>
-            <span>数量、成本、现价都可修改</span>
+            <strong>持仓</strong>
+            <span>点编辑修改数量、成本、现价</span>
           </div>
-          <div class="editable-list" id="positionsList"></div>
-        </section>
-
-        <section class="account-section locked" id="tradeSection">
-          <div class="section-line">
-            <strong>手动记录买卖</strong>
-            <span>用于补录历史</span>
-          </div>
-          <form class="trade-form" id="tradeForm">
-            <select id="tradeType">
-              <option value="BUY">买入</option>
-              <option value="SELL">卖出</option>
-            </select>
-            <input id="tradeCode" placeholder="代码" required>
-            <input id="tradeName" placeholder="名称" required>
-            <input id="tradeQuantity" type="number" min="1" step="100" placeholder="数量" required>
-            <input id="tradePrice" type="number" min="0.01" step="0.01" placeholder="价格" required>
-            <button class="primary-btn" type="submit">记录</button>
-          </form>
+          <div class="editable-list compact-list" id="positionsList"></div>
         </section>
 
         <section class="account-section locked">
@@ -124,6 +72,76 @@
         </section>
       </section>
     </main>
+
+    <div class="auth-modal hidden" id="loginModal" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+      <form class="auth-card" id="accountAuthForm">
+        <div class="auth-head">
+          <div>
+            <h2 id="loginTitle">登录 / 注册</h2>
+            <p>本机保存，按账号隔离</p>
+          </div>
+          <button class="icon-btn" data-close="loginModal" type="button" aria-label="关闭">×</button>
+        </div>
+        <label class="field"><span>账号</span><input id="accountUsername" autocomplete="username" maxlength="24" required></label>
+        <label class="field"><span>密码</span><input id="accountPassword" type="password" autocomplete="current-password" minlength="4" required></label>
+        <p class="auth-message" id="accountMessage"></p>
+        <div class="auth-actions two">
+          <button class="primary-btn" type="submit">登录</button>
+          <button class="secondary-btn" id="accountRegisterBtn" type="button">注册</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="auth-modal hidden" id="moneyModal" role="dialog" aria-modal="true" aria-labelledby="moneyTitle">
+      <form class="auth-card" id="moneyForm">
+        <div class="auth-head">
+          <div>
+            <h2 id="moneyTitle">编辑资金</h2>
+            <p id="accountUserLabel">请先登录</p>
+          </div>
+          <button class="icon-btn" data-close="moneyModal" type="button" aria-label="关闭">×</button>
+        </div>
+        <label class="field"><span>账户总金额</span><input id="initialCapital" type="number" inputmode="decimal" min="0" step="0.01"></label>
+        <label class="field"><span>可用现金</span><input id="cashAmount" type="number" inputmode="decimal" step="0.01"></label>
+        <button class="primary-btn" type="submit">保存资金</button>
+      </form>
+    </div>
+
+    <div class="auth-modal hidden" id="tradeModal" role="dialog" aria-modal="true" aria-labelledby="tradeTitle">
+      <form class="auth-card" id="tradeForm">
+        <div class="auth-head">
+          <div>
+            <h2 id="tradeTitle">记录买卖</h2>
+            <p>用于补录历史</p>
+          </div>
+          <button class="icon-btn" data-close="tradeModal" type="button" aria-label="关闭">×</button>
+        </div>
+        <select id="tradeType">
+          <option value="BUY">买入</option>
+          <option value="SELL">卖出</option>
+        </select>
+        <input id="tradeCode" placeholder="代码" required>
+        <input id="tradeName" placeholder="名称" required>
+        <input id="tradeQuantity" type="number" min="100" step="100" placeholder="数量" required>
+        <input id="tradePrice" type="number" min="0.01" step="0.01" placeholder="价格" required>
+        <button class="primary-btn" type="submit">记录</button>
+      </form>
+    </div>
+
+    <div class="auth-modal hidden" id="passwordModal" role="dialog" aria-modal="true" aria-labelledby="passwordTitle">
+      <form class="auth-card" id="passwordForm">
+        <div class="auth-head">
+          <div>
+            <h2 id="passwordTitle">修改密码</h2>
+            <p>仅修改当前登录账号</p>
+          </div>
+          <button class="icon-btn" data-close="passwordModal" type="button" aria-label="关闭">×</button>
+        </div>
+        <label class="field"><span>旧密码</span><input id="oldPassword" type="password" autocomplete="current-password" required></label>
+        <label class="field"><span>新密码</span><input id="newPassword" type="password" autocomplete="new-password" minlength="4" required></label>
+        <button class="primary-btn" type="submit">保存密码</button>
+      </form>
+    </div>
 
     <script src="./account.js"></script>
   </body>

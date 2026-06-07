@@ -10,6 +10,7 @@ let account = {
   updatedAt: ""
 };
 let trades = [];
+let editingCode = "";
 
 function readJson(key, fallback) {
   try {
@@ -76,8 +77,24 @@ function formatDate(value) {
 
 function setMessage(message, type = "") {
   const node = document.getElementById("accountMessage");
+  if (!node) return;
   node.textContent = message || "";
   node.className = `auth-message ${type}`;
+}
+
+function openModal(id) {
+  if (!currentUser && id !== "loginModal") {
+    openModal("loginModal");
+    setMessage("请先登录", "error");
+    return;
+  }
+  const modal = document.getElementById(id);
+  if (modal) modal.classList.remove("hidden");
+}
+
+function closeModal(id) {
+  const modal = document.getElementById(id);
+  if (modal) modal.classList.add("hidden");
 }
 
 function loadUserData() {
@@ -180,10 +197,11 @@ function calcSummary() {
 
 function renderAll() {
   const logged = Boolean(currentUser);
-  document.getElementById("authState").textContent = logged ? "已登录" : "未登录";
+  document.getElementById("authState").textContent = logged ? `已登录：${currentUser.username}` : "未登录";
   document.getElementById("accountTitle").textContent = logged ? `${currentUser.username} 的账户` : "账户数据";
   document.getElementById("accountUserLabel").textContent = logged ? currentUser.username : "请先登录";
   document.getElementById("accountLogoutBtn").disabled = !logged;
+  document.getElementById("openPasswordBtn").disabled = !logged;
   document.querySelectorAll(".locked").forEach((node) => node.classList.toggle("disabled", !logged));
 
   document.getElementById("initialCapital").value = logged ? Number(account.initialCapital || 0).toFixed(2) : "";
@@ -217,15 +235,21 @@ function renderPositions() {
     return;
   }
   list.innerHTML = rows.map((item) => `
-    <div class="edit-row" data-code="${item.code}">
+    <div class="edit-row compact-position ${editingCode === item.code ? "editing" : ""}" data-code="${item.code}">
       <div class="edit-title">
         <strong>${item.name}</strong>
         <span>${item.code}</span>
       </div>
-      <label><span>数量</span><input data-field="quantity" type="number" min="0" step="100" value="${Number(item.quantity || 0)}"></label>
-      <label><span>均价</span><input data-field="avgPrice" type="number" min="0" step="0.01" value="${Number(item.avgPrice || 0).toFixed(2)}"></label>
-      <label><span>现价</span><input data-field="lastPrice" type="number" min="0" step="0.01" value="${Number(item.lastPrice || item.avgPrice || 0).toFixed(2)}"></label>
+      <div class="position-metric"><span>数量</span><strong>${Number(item.quantity || 0)}</strong></div>
+      <div class="position-metric"><span>均价</span><strong>${formatCurrency(item.avgPrice)}</strong></div>
+      <div class="position-metric"><span>现价</span><strong>${formatCurrency(item.lastPrice || item.avgPrice)}</strong></div>
+      <div class="position-edit-fields">
+        <label><span>数量</span><input data-field="quantity" type="number" min="0" step="100" value="${Number(item.quantity || 0)}"></label>
+        <label><span>均价</span><input data-field="avgPrice" type="number" min="0" step="0.01" value="${Number(item.avgPrice || 0).toFixed(2)}"></label>
+        <label><span>现价</span><input data-field="lastPrice" type="number" min="0" step="0.01" value="${Number(item.lastPrice || item.avgPrice || 0).toFixed(2)}"></label>
+      </div>
       <div class="edit-actions">
+        <button class="secondary-btn edit-position" type="button">${editingCode === item.code ? "收起" : "编辑"}</button>
         <button class="secondary-btn save-position" type="button">保存</button>
         <button class="danger-btn delete-position" type="button">删除</button>
       </div>
@@ -396,6 +420,16 @@ document.getElementById("accountRegisterBtn").addEventListener("click", async ()
 });
 
 document.getElementById("accountLogoutBtn").addEventListener("click", logoutUser);
+document.getElementById("openLoginBtn").addEventListener("click", () => openModal("loginModal"));
+document.getElementById("openMoneyBtn").addEventListener("click", () => openModal("moneyModal"));
+document.getElementById("openTradeBtn").addEventListener("click", () => openModal("tradeModal"));
+document.getElementById("openPasswordBtn").addEventListener("click", () => openModal("passwordModal"));
+
+document.addEventListener("click", (event) => {
+  const close = event.target.closest("[data-close]");
+  if (close) closeModal(close.dataset.close);
+  if (event.target.classList.contains("auth-modal")) closeModal(event.target.id);
+});
 
 document.getElementById("moneyForm").addEventListener("submit", (event) => {
   event.preventDefault();
@@ -411,8 +445,14 @@ document.getElementById("positionsList").addEventListener("click", (event) => {
   const row = event.target.closest(".edit-row");
   if (!row) return;
   try {
+    if (event.target.closest(".edit-position")) {
+      editingCode = editingCode === row.dataset.code ? "" : row.dataset.code;
+      renderPositions();
+      return;
+    }
     if (event.target.closest(".save-position")) {
       saveEditedPosition(row);
+      editingCode = "";
       setMessage("持仓已更新", "ok");
     }
     if (event.target.closest(".delete-position")) {
@@ -421,6 +461,27 @@ document.getElementById("positionsList").addEventListener("click", (event) => {
       renderAll();
       setMessage("持仓已删除", "ok");
     }
+  } catch (error) {
+    setMessage(error instanceof Error ? error.message : String(error), "error");
+  }
+});
+
+document.getElementById("passwordForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    if (!currentUser) throw new Error("请先登录");
+    const oldPassword = document.getElementById("oldPassword").value;
+    const newPassword = document.getElementById("newPassword").value;
+    if (String(newPassword || "").length < 4) throw new Error("新密码至少 4 位");
+    const oldHash = await hashPassword(currentUser.key, oldPassword);
+    if (oldHash !== currentUser.passwordHash) throw new Error("旧密码不正确");
+    const users = loadUsers();
+    currentUser.passwordHash = await hashPassword(currentUser.key, newPassword);
+    users[currentUser.key] = currentUser;
+    saveUsers(users);
+    event.target.reset();
+    closeModal("passwordModal");
+    setMessage("密码已修改", "ok");
   } catch (error) {
     setMessage(error instanceof Error ? error.message : String(error), "error");
   }

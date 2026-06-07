@@ -38,6 +38,11 @@ button {
   font: inherit;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .topbar {
   position: sticky;
   top: 0;
@@ -859,17 +864,70 @@ p {
 
 .account-page {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
+}
+
+.account-page.compact .section-head {
+  margin-bottom: 4px;
+}
+
+.account-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px 10px;
+}
+
+.account-hero h2 {
+  overflow: hidden;
+  font-size: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-hero p {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.account-actions,
+.toolbar-line {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.account-actions .primary-btn,
+.account-actions .secondary-btn,
+.toolbar-line .primary-btn,
+.toolbar-line .secondary-btn {
+  min-height: 30px;
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.toolbar-line {
+  justify-content: stretch;
+}
+
+.toolbar-line .primary-btn,
+.toolbar-line .secondary-btn {
+  flex: 1 1 0;
 }
 
 .account-section {
   display: grid;
-  gap: 10px;
+  gap: 7px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
-  padding: 10px;
+  padding: 8px;
 }
 
 .account-section.disabled {
@@ -919,16 +977,20 @@ p {
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: 6px;
+}
+
+.compact-summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .summary-grid div {
   display: grid;
-  gap: 4px;
+  gap: 2px;
   border: 1px solid var(--line);
   border-radius: 7px;
   background: #fbfcfe;
-  padding: 8px;
+  padding: 7px;
 }
 
 .summary-grid span {
@@ -939,7 +1001,7 @@ p {
 .summary-grid strong {
   overflow: hidden;
   color: var(--text);
-  font-size: 14px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -953,13 +1015,13 @@ p {
 
 .edit-row {
   display: grid;
-  grid-template-columns: minmax(92px, 1.2fr) repeat(3, minmax(76px, 1fr)) minmax(104px, 0.9fr);
-  gap: 8px;
-  align-items: end;
+  grid-template-columns: minmax(80px, 1.15fr) repeat(3, minmax(58px, 0.8fr)) minmax(98px, 0.95fr);
+  gap: 6px;
+  align-items: center;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfcfe;
-  padding: 8px;
+  padding: 7px;
 }
 
 .edit-title,
@@ -967,6 +1029,40 @@ p {
   display: grid;
   min-width: 0;
   gap: 4px;
+}
+
+.position-metric {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.position-metric span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.position-metric strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.position-edit-fields {
+  display: none;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.edit-row.editing .position-edit-fields {
+  display: grid;
+}
+
+.edit-row.editing .position-metric {
+  display: none;
 }
 
 .edit-title strong,
@@ -993,8 +1089,15 @@ p {
 
 .edit-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.edit-actions .secondary-btn,
+.edit-actions .danger-btn {
+  min-height: 28px;
+  padding: 2px 4px;
+  font-size: 11px;
 }
 
 .danger-btn {
@@ -1006,14 +1109,14 @@ p {
 
 .history-row {
   display: grid;
-  grid-template-columns: 44px minmax(72px, 1fr) 56px minmax(110px, 1.2fr) 76px;
+  grid-template-columns: 38px minmax(64px, 1fr) 54px minmax(96px, 1.2fr) 64px;
   gap: 6px;
   align-items: center;
   border: 1px solid var(--line);
   border-radius: 7px;
   background: #fbfcfe;
-  padding: 7px;
-  font-size: 12px;
+  padding: 6px;
+  font-size: 11px;
 }
 
 .history-row strong,
@@ -1140,11 +1243,24 @@ body {
 }
 
 .money-form,
-.trade-form,
-.summary-grid,
-.edit-row,
-.history-row {
+.trade-form {
   grid-template-columns: 1fr;
+}
+
+.compact-summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.edit-row {
+  grid-template-columns: minmax(74px, 1fr) repeat(3, minmax(48px, 0.72fr)) minmax(88px, 0.9fr);
+}
+
+.history-row {
+  grid-template-columns: 34px minmax(58px, 1fr) 48px minmax(72px, 1.1fr);
+}
+
+.history-row small {
+  display: none;
 }
 
 .edit-actions {
