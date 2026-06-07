@@ -16,6 +16,8 @@ let strategySummary = null;
 let isLoading = false;
 let currentUser = null;
 let favorites = new Set();
+let positions = {};
+let buyTarget = null;
 
 function readJson(key, fallback) {
   try {
@@ -47,6 +49,7 @@ function loadUserState() {
   selected = state.selected || { boardId: "", stockCode: "" };
   expanded = state.expanded || { boardId: "", stockCode: "" };
   favorites = new Set(readJson(scopedKey("favorites"), []));
+  positions = readJson(scopedKey("positions"), {});
 }
 
 function saveUserState() {
@@ -59,6 +62,27 @@ function saveUserState() {
 
 function saveFavorites() {
   writeJson(scopedKey("favorites"), Array.from(favorites));
+}
+
+function savePositions() {
+  writeJson(scopedKey("positions"), positions);
+}
+
+function formatCurrency(value) {
+  const amount = Number(value || 0);
+  if (!Number.isFinite(amount)) return "--";
+  return amount.toLocaleString("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
+
+function findStock(code) {
+  for (const board of boards) {
+    const stock = (board.stocks || []).find((item) => String(item.code) === String(code));
+    if (stock) return stock;
+  }
+  return null;
 }
 
 function isFavorite(code) {
@@ -82,6 +106,7 @@ function setAuthMessage(message, type = "") {
 
 function showAuthModal() {
   document.getElementById("authModal").classList.remove("hidden");
+  renderPortfolio();
   setAuthMessage(currentUser ? `当前账号：${currentUser.username}` : "");
   const input = document.getElementById("authUsername");
   if (input && !currentUser) input.focus();
@@ -101,6 +126,47 @@ function updateAuthUi() {
   if (title) title.textContent = currentUser ? "用户中心" : "用户登录";
   if (subtitle) subtitle.textContent = currentUser ? "自选和看板状态已按账号隔离" : "本机保存，按账号隔离自选和看板状态";
   if (logoutBtn) logoutBtn.classList.toggle("hidden", !currentUser);
+  renderPortfolio();
+}
+
+function renderPortfolio() {
+  const panel = document.getElementById("portfolioPanel");
+  const list = document.getElementById("portfolioList");
+  const totalNode = document.getElementById("portfolioTotal");
+  if (!panel || !list || !totalNode) return;
+  panel.classList.toggle("hidden", !currentUser);
+  if (!currentUser) {
+    list.innerHTML = "";
+    totalNode.textContent = "总金额 --";
+    return;
+  }
+  const rows = Object.values(positions || {}).sort((a, b) => String(a.code).localeCompare(String(b.code)));
+  const total = rows.reduce((sum, item) => sum + Number(item.totalCost || 0), 0);
+  totalNode.textContent = `总金额 ${formatCurrency(total)}`;
+  if (!rows.length) {
+    list.innerHTML = `<div class="portfolio-empty">暂无买入记录</div>`;
+    return;
+  }
+  list.innerHTML = rows.map((item) => `
+    <div class="portfolio-row">
+      <div>
+        <strong>${item.name}</strong>
+        <span>${item.code}</span>
+      </div>
+      <div>
+        <b>${Number(item.quantity || 0)}</b>
+        <span>股</span>
+      </div>
+      <div>
+        <b>${formatCurrency(item.totalCost)}</b>
+        <span>金额</span>
+      </div>
+      <div>
+        <b>${formatCurrency(item.avgPrice)}</b>
+        <span>均价</span>
+      </div>
+    </div>
+  `).join("");
 }
 
 async function hashPassword(username, password) {
@@ -128,6 +194,65 @@ function startUserSession(user) {
   ensureSelection();
   updateAuthUi();
   renderBoards();
+}
+
+function showLoginRequired() {
+  showAuthModal();
+  setAuthMessage("请先登录账号，再记录买入数量", "error");
+}
+
+function openBuyModal(code) {
+  if (!currentUser) {
+    showLoginRequired();
+    return;
+  }
+  const stock = findStock(code);
+  if (!stock) return;
+  buyTarget = stock;
+  document.getElementById("buyStockName").textContent = `${stock.code} ${stock.name}  现价 ${Number(stock.price || 0).toFixed(2)}`;
+  document.getElementById("buyQuantity").value = "100";
+  document.getElementById("buyPrice").value = Number(stock.price || 0).toFixed(2);
+  document.getElementById("buyMessage").textContent = "";
+  document.getElementById("buyMessage").className = "auth-message";
+  document.getElementById("buyModal").classList.remove("hidden");
+  document.getElementById("buyQuantity").focus();
+}
+
+function closeBuyModal() {
+  buyTarget = null;
+  document.getElementById("buyModal").classList.add("hidden");
+}
+
+function recordBuy(quantity, price) {
+  if (!currentUser || !buyTarget) return;
+  const qty = Number(quantity);
+  const buyPrice = Number(price);
+  if (!Number.isFinite(qty) || qty <= 0) throw new Error("请输入有效买入数量");
+  if (!Number.isFinite(buyPrice) || buyPrice <= 0) throw new Error("请输入有效买入价格");
+  const code = String(buyTarget.code);
+  const old = positions[code] || {
+    code,
+    name: buyTarget.name,
+    quantity: 0,
+    totalCost: 0,
+    avgPrice: 0,
+    lastPrice: 0,
+    updatedAt: ""
+  };
+  const totalQuantity = Number(old.quantity || 0) + qty;
+  const totalCost = Number(old.totalCost || 0) + qty * buyPrice;
+  positions[code] = {
+    ...old,
+    name: buyTarget.name,
+    quantity: totalQuantity,
+    totalCost,
+    avgPrice: totalCost / totalQuantity,
+    lastPrice: buyPrice,
+    updatedAt: new Date().toISOString()
+  };
+  savePositions();
+  renderPortfolio();
+  updateAuthUi();
 }
 
 async function registerUser(username, password) {
@@ -396,7 +521,7 @@ function renderBoards() {
       </div>
       <div class="stock-table">
         <div class="stock-head">
-          <span>代码/名称</span><span>涨幅</span><span>换手</span><span>成交额</span><span>量比</span><span>市值</span><span>尾盘</span><span>评分</span><span>风险</span><span>触发条件</span><span>详情</span><span>自选</span>
+          <span>代码/名称</span><span>涨幅</span><span>换手</span><span>成交额</span><span>量比</span><span>市值</span><span>尾盘</span><span>评分</span><span>风险</span><span>触发条件</span><span>详情</span><span>自选</span><span>买入</span>
         </div>
         ${board.stocks.map((stock) => renderStock(board, stock)).join("")}
       </div>
@@ -434,6 +559,7 @@ function renderStock(board, stock) {
       </div>
       <button class="mini-btn detail-toggle" type="button" data-board="${board.id}" data-stock="${stock.code}" aria-expanded="${isExpanded}">${isExpanded ? "收起" : "详情"}</button>
       <button class="favorite-btn ${favorite ? "active" : ""}" type="button" data-favorite="${stock.code}" aria-label="${favorite ? "取消自选" : "加入自选"}">${favorite ? "★" : "☆"}</button>
+      <button class="buy-btn" type="button" data-buy="${stock.code}" aria-label="记录买入${stock.name}">买</button>
     </div>
     <div class="details ${isExpanded ? "open" : ""}" data-detail="${stock.code}">
       <div class="detail-card">
@@ -493,6 +619,14 @@ async function loadRecommendations(options = {}) {
 }
 
 document.addEventListener("click", (event) => {
+  const buyBtn = event.target.closest(".buy-btn");
+  if (buyBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    openBuyModal(buyBtn.dataset.buy);
+    return;
+  }
+
   const favoriteBtn = event.target.closest(".favorite-btn");
   if (favoriteBtn) {
     event.preventDefault();
@@ -557,6 +691,28 @@ document.getElementById("registerBtn").addEventListener("click", async () => {
 });
 
 document.getElementById("logoutBtn").addEventListener("click", logoutUser);
+document.getElementById("buyClose").addEventListener("click", closeBuyModal);
+document.getElementById("buyCancel").addEventListener("click", closeBuyModal);
+document.getElementById("buyModal").addEventListener("click", (event) => {
+  if (event.target.id === "buyModal") closeBuyModal();
+});
+
+document.getElementById("buyForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const message = document.getElementById("buyMessage");
+  try {
+    recordBuy(
+      document.getElementById("buyQuantity").value,
+      document.getElementById("buyPrice").value
+    );
+    message.textContent = "买入记录已保存到当前账号";
+    message.className = "auth-message ok";
+    setTimeout(closeBuyModal, 450);
+  } catch (error) {
+    message.textContent = error instanceof Error ? error.message : String(error);
+    message.className = "auth-message error";
+  }
+});
 
 initAuth();
 chooseFastSite();

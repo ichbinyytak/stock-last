@@ -544,6 +544,7 @@ function mapStock(row, board, market) {
   return {
     code: String(row.f12),
     name: row.f14 || "--",
+    price: number(row.f2, 0),
     change: number(row.f3, 0),
     turnover: number(row.f8, 0),
     amount: formatMoney(row.f6),

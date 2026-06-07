@@ -105,7 +105,8 @@ p {
 .icon-btn,
 .primary-btn,
 .secondary-btn,
-.favorite-btn {
+.favorite-btn,
+.buy-btn {
   min-height: 30px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -171,7 +172,8 @@ p {
 .icon-btn:hover,
 .primary-btn:hover,
 .secondary-btn:hover,
-.favorite-btn:hover {
+.favorite-btn:hover,
+.buy-btn:hover {
   border-color: #9dc1f5;
   background: var(--blue-bg);
 }
@@ -433,7 +435,8 @@ p {
     72px
     minmax(180px, 1.7fr)
     52px
-    32px;
+    32px
+    36px;
   gap: 8px;
   align-items: center;
 }
@@ -566,6 +569,22 @@ p {
   border-color: #ffd081;
   background: var(--amber-bg);
   color: var(--amber);
+}
+
+.buy-btn {
+  display: inline-grid;
+  width: 36px;
+  min-height: 30px;
+  place-items: center;
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.buy-btn:active {
+  border-color: #ffc4bf;
+  background: var(--red-bg);
 }
 
 .detail-toggle[aria-expanded="true"] {
@@ -724,6 +743,10 @@ p {
   gap: 8px;
 }
 
+.auth-actions.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .primary-btn,
 .secondary-btn {
   min-height: 36px;
@@ -735,6 +758,80 @@ p {
 .primary-btn {
   border-color: #70c7b8;
   background: var(--blue-bg);
+}
+
+.portfolio-panel {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.portfolio-panel.hidden {
+  display: none;
+}
+
+.portfolio-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.portfolio-head span {
+  color: var(--red);
+  font-weight: 800;
+}
+
+.portfolio-list {
+  display: grid;
+  gap: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.portfolio-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(54px, 0.6fr) minmax(78px, 0.9fr) minmax(68px, 0.8fr);
+  gap: 6px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fbfcfe;
+  padding: 7px;
+}
+
+.portfolio-row div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.portfolio-row strong,
+.portfolio-row b {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portfolio-row span,
+.portfolio-empty {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.buy-stock {
+  border: 1px solid #c9e8df;
+  border-radius: 7px;
+  background: var(--blue-bg);
+  color: var(--text);
+  padding: 8px;
+  font-size: 13px;
+  font-weight: 800;
 }
 
 @media (max-width: 1180px) {
@@ -885,11 +982,11 @@ body {
 }
 
 .stock-row {
-  grid-template-columns: minmax(0, 1fr) 46px 32px;
+  grid-template-columns: minmax(0, 1fr) 46px 32px 36px;
   grid-template-areas:
-    "top top top"
-    "stats stats stats"
-    "meta link fav";
+    "top top top top"
+    "stats stats stats stats"
+    "meta link fav buy";
   align-items: stretch;
   gap: 5px 7px;
   width: calc(100% - 16px);
@@ -1039,6 +1136,13 @@ body {
   align-self: center;
 }
 
+.buy-btn {
+  grid-area: buy;
+  width: 36px;
+  min-height: 26px;
+  align-self: center;
+}
+
 .action-tag,
 .state-tag,
 .tag {
@@ -1073,11 +1177,11 @@ body {
 
 @media (max-width: 380px) {
   .stock-row {
-    grid-template-columns: minmax(0, 1fr) 42px 30px;
+    grid-template-columns: minmax(0, 1fr) 42px 30px 34px;
     grid-template-areas:
-      "top top top"
-      "stats stats stats"
-      "meta link fav";
+      "top top top top"
+      "stats stats stats stats"
+      "meta link fav buy";
   }
 
   .stock-top {
@@ -1091,6 +1195,10 @@ body {
 
   .favorite-btn {
     width: 30px;
+  }
+
+  .buy-btn {
+    width: 34px;
   }
 
   .sector-head {

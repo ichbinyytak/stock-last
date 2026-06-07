@@ -77,6 +77,45 @@
           <button class="secondary-btn" id="registerBtn" type="button">注册</button>
           <button class="secondary-btn hidden" id="logoutBtn" type="button">退出</button>
         </div>
+
+        <div class="portfolio-panel hidden" id="portfolioPanel">
+          <div class="portfolio-head">
+            <strong>我的持仓</strong>
+            <span id="portfolioTotal">总金额 --</span>
+          </div>
+          <div class="portfolio-list" id="portfolioList"></div>
+        </div>
+      </form>
+    </div>
+
+    <div class="auth-modal hidden" id="buyModal" role="dialog" aria-modal="true" aria-labelledby="buyTitle">
+      <form class="auth-card" id="buyForm">
+        <div class="auth-head">
+          <div>
+            <h2 id="buyTitle">记录买入</h2>
+            <p id="buySubtitle">买入记录只保存到当前登录账号</p>
+          </div>
+          <button class="icon-btn" id="buyClose" type="button" aria-label="关闭">×</button>
+        </div>
+
+        <div class="buy-stock" id="buyStockName">--</div>
+
+        <label class="field">
+          <span>买入数量</span>
+          <input id="buyQuantity" name="quantity" type="number" inputmode="numeric" min="1" step="100" required>
+        </label>
+
+        <label class="field">
+          <span>买入价格</span>
+          <input id="buyPrice" name="price" type="number" inputmode="decimal" min="0.01" step="0.01" required>
+        </label>
+
+        <p class="auth-message" id="buyMessage"></p>
+
+        <div class="auth-actions two">
+          <button class="primary-btn" type="submit">确认买入</button>
+          <button class="secondary-btn" id="buyCancel" type="button">取消</button>
+        </div>
       </form>
     </div>
 
