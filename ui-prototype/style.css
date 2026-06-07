@@ -43,7 +43,7 @@ button {
   top: 0;
   z-index: 20;
   display: grid;
-  grid-template-columns: auto minmax(280px, 1fr) auto;
+  grid-template-columns: auto minmax(280px, 1fr) auto auto;
   gap: 14px;
   align-items: center;
   min-height: 68px;
@@ -100,7 +100,12 @@ p {
 
 .status-strip span,
 .refresh-btn,
-.mini-btn {
+.auth-btn,
+.mini-btn,
+.icon-btn,
+.primary-btn,
+.secondary-btn,
+.favorite-btn {
   min-height: 30px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -148,15 +153,25 @@ p {
   font-weight: 800;
 }
 
-.refresh-btn {
+.refresh-btn,
+.auth-btn {
   width: 64px;
   color: var(--blue);
   font-weight: 700;
   cursor: pointer;
 }
 
+.auth-btn {
+  width: 72px;
+}
+
 .refresh-btn:hover,
-.mini-btn:hover {
+.auth-btn:hover,
+.mini-btn:hover,
+.icon-btn:hover,
+.primary-btn:hover,
+.secondary-btn:hover,
+.favorite-btn:hover {
   border-color: #9dc1f5;
   background: var(--blue-bg);
 }
@@ -417,7 +432,8 @@ p {
     52px
     72px
     minmax(180px, 1.7fr)
-    52px;
+    52px
+    32px;
   gap: 8px;
   align-items: center;
 }
@@ -535,6 +551,23 @@ p {
   cursor: pointer;
 }
 
+.favorite-btn {
+  display: inline-grid;
+  width: 32px;
+  min-height: 30px;
+  place-items: center;
+  color: var(--faint);
+  font-size: 17px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.favorite-btn.active {
+  border-color: #ffd081;
+  background: var(--amber-bg);
+  color: var(--amber);
+}
+
 .detail-toggle[aria-expanded="true"] {
   border-color: #9dc1f5;
   background: var(--blue-bg);
@@ -597,6 +630,113 @@ p {
   text-decoration: none;
 }
 
+.auth-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.auth-modal.hidden,
+.hidden {
+  display: none;
+}
+
+.auth-card {
+  display: grid;
+  width: min(100%, 390px);
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 14px;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.22);
+}
+
+.auth-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.auth-head h2 {
+  font-size: 18px;
+}
+
+.auth-head p,
+.auth-message {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.icon-btn {
+  display: inline-grid;
+  width: 32px;
+  min-height: 32px;
+  place-items: center;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.field {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.field input {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 9px;
+  color: var(--text);
+  font: inherit;
+}
+
+.field input:focus {
+  border-color: #70c7b8;
+  outline: 2px solid rgba(15, 118, 110, 0.12);
+}
+
+.auth-message {
+  min-height: 18px;
+}
+
+.auth-message.error {
+  color: var(--red);
+}
+
+.auth-message.ok {
+  color: var(--green);
+}
+
+.auth-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.primary-btn,
+.secondary-btn {
+  min-height: 36px;
+  color: var(--blue);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.primary-btn {
+  border-color: #70c7b8;
+  background: var(--blue-bg);
+}
+
 @media (max-width: 1180px) {
   .layout {
     grid-template-columns: 1fr;
@@ -620,7 +760,7 @@ body {
 }
 
 .topbar {
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px;
   min-height: auto;
   padding-top: 8px;
@@ -649,6 +789,11 @@ body {
 
 .refresh-btn {
   width: 54px;
+  min-height: 30px;
+}
+
+.auth-btn {
+  width: 68px;
   min-height: 30px;
 }
 
@@ -740,11 +885,11 @@ body {
 }
 
 .stock-row {
-  grid-template-columns: minmax(0, 1fr) 46px;
+  grid-template-columns: minmax(0, 1fr) 46px 32px;
   grid-template-areas:
-    "top top"
-    "stats stats"
-    "meta link";
+    "top top top"
+    "stats stats stats"
+    "meta link fav";
   align-items: stretch;
   gap: 5px 7px;
   width: calc(100% - 16px);
@@ -887,6 +1032,13 @@ body {
   align-self: center;
 }
 
+.favorite-btn {
+  grid-area: fav;
+  width: 32px;
+  min-height: 26px;
+  align-self: center;
+}
+
 .action-tag,
 .state-tag,
 .tag {
@@ -921,11 +1073,11 @@ body {
 
 @media (max-width: 380px) {
   .stock-row {
-    grid-template-columns: minmax(0, 1fr) 42px;
+    grid-template-columns: minmax(0, 1fr) 42px 30px;
     grid-template-areas:
-      "top top"
-      "stats stats"
-      "meta link";
+      "top top top"
+      "stats stats stats"
+      "meta link fav";
   }
 
   .stock-top {
@@ -935,6 +1087,10 @@ body {
 
   .mini-btn {
     width: 42px;
+  }
+
+  .favorite-btn {
+    width: 30px;
   }
 
   .sector-head {

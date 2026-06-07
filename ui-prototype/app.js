@@ -1,4 +1,7 @@
 const externalSites = ["东方财富", "同花顺", "雪球"];
+const USERS_KEY = "lateDay.users.v1";
+const SESSION_KEY = "lateDay.session.v1";
+const GUEST_ID = "guest";
 
 let boards = [];
 let selected = {
@@ -11,6 +14,169 @@ let expanded = {
 };
 let strategySummary = null;
 let isLoading = false;
+let currentUser = null;
+let favorites = new Set();
+
+function readJson(key, fallback) {
+  try {
+    const value = localStorage.getItem(key);
+    return value ? JSON.parse(value) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJson(key, value) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+function normalizeUsername(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function userScope() {
+  return currentUser ? currentUser.id : GUEST_ID;
+}
+
+function scopedKey(name) {
+  return `lateDay.${userScope()}.${name}.v1`;
+}
+
+function loadUserState() {
+  const state = readJson(scopedKey("state"), {});
+  selected = state.selected || { boardId: "", stockCode: "" };
+  expanded = state.expanded || { boardId: "", stockCode: "" };
+  favorites = new Set(readJson(scopedKey("favorites"), []));
+}
+
+function saveUserState() {
+  writeJson(scopedKey("state"), {
+    selected,
+    expanded,
+    updatedAt: new Date().toISOString()
+  });
+}
+
+function saveFavorites() {
+  writeJson(scopedKey("favorites"), Array.from(favorites));
+}
+
+function isFavorite(code) {
+  return favorites.has(String(code));
+}
+
+function toggleFavorite(code) {
+  const value = String(code);
+  if (favorites.has(value)) favorites.delete(value);
+  else favorites.add(value);
+  saveFavorites();
+  renderBoards();
+}
+
+function setAuthMessage(message, type = "") {
+  const node = document.getElementById("authMessage");
+  if (!node) return;
+  node.textContent = message || "";
+  node.className = `auth-message ${type}`;
+}
+
+function showAuthModal() {
+  document.getElementById("authModal").classList.remove("hidden");
+  setAuthMessage(currentUser ? `当前账号：${currentUser.username}` : "");
+  const input = document.getElementById("authUsername");
+  if (input && !currentUser) input.focus();
+}
+
+function hideAuthModal() {
+  document.getElementById("authModal").classList.add("hidden");
+  setAuthMessage("");
+}
+
+function updateAuthUi() {
+  const label = document.getElementById("authLabel");
+  const title = document.getElementById("authTitle");
+  const subtitle = document.getElementById("authSubtitle");
+  const logoutBtn = document.getElementById("logoutBtn");
+  if (label) label.textContent = currentUser ? currentUser.username.slice(0, 6) : "登录";
+  if (title) title.textContent = currentUser ? "用户中心" : "用户登录";
+  if (subtitle) subtitle.textContent = currentUser ? "自选和看板状态已按账号隔离" : "本机保存，按账号隔离自选和看板状态";
+  if (logoutBtn) logoutBtn.classList.toggle("hidden", !currentUser);
+}
+
+async function hashPassword(username, password) {
+  const payload = `late-day-buying:${normalizeUsername(username)}:${password}`;
+  if (window.crypto && window.crypto.subtle) {
+    const bytes = new TextEncoder().encode(payload);
+    const hash = await window.crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(hash)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+  return btoa(unescape(encodeURIComponent(payload)));
+}
+
+function loadUsers() {
+  return readJson(USERS_KEY, {});
+}
+
+function saveUsers(users) {
+  writeJson(USERS_KEY, users);
+}
+
+function startUserSession(user) {
+  currentUser = user;
+  localStorage.setItem(SESSION_KEY, user.key);
+  loadUserState();
+  ensureSelection();
+  updateAuthUi();
+  renderBoards();
+}
+
+async function registerUser(username, password) {
+  const key = normalizeUsername(username);
+  if (!key || key.length < 2) throw new Error("账号至少 2 个字符");
+  if (String(password || "").length < 4) throw new Error("密码至少 4 位");
+  const users = loadUsers();
+  if (users[key]) throw new Error("账号已存在，请直接登录");
+  const user = {
+    key,
+    id: `u_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+    username: String(username).trim(),
+    passwordHash: await hashPassword(key, password),
+    createdAt: new Date().toISOString()
+  };
+  users[key] = user;
+  saveUsers(users);
+  startUserSession(user);
+  setAuthMessage("注册成功，已登录", "ok");
+}
+
+async function loginUser(username, password) {
+  const key = normalizeUsername(username);
+  const users = loadUsers();
+  const user = users[key];
+  if (!user) throw new Error("账号不存在");
+  const hash = await hashPassword(key, password);
+  if (hash !== user.passwordHash) throw new Error("密码不正确");
+  startUserSession(user);
+  setAuthMessage("登录成功", "ok");
+}
+
+function logoutUser() {
+  currentUser = null;
+  localStorage.removeItem(SESSION_KEY);
+  loadUserState();
+  ensureSelection();
+  updateAuthUi();
+  renderBoards();
+  setAuthMessage("已退出，当前使用访客数据", "ok");
+}
+
+function initAuth() {
+  const sessionKey = localStorage.getItem(SESSION_KEY);
+  const users = loadUsers();
+  currentUser = sessionKey && users[sessionKey] ? users[sessionKey] : null;
+  loadUserState();
+  updateAuthUi();
+}
 
 function riskClass(risk) {
   if (risk === "低") return "risk-low";
@@ -230,7 +396,7 @@ function renderBoards() {
       </div>
       <div class="stock-table">
         <div class="stock-head">
-          <span>代码/名称</span><span>涨幅</span><span>换手</span><span>成交额</span><span>量比</span><span>市值</span><span>尾盘</span><span>评分</span><span>风险</span><span>触发条件</span><span>详情</span>
+          <span>代码/名称</span><span>涨幅</span><span>换手</span><span>成交额</span><span>量比</span><span>市值</span><span>尾盘</span><span>评分</span><span>风险</span><span>触发条件</span><span>详情</span><span>自选</span>
         </div>
         ${board.stocks.map((stock) => renderStock(board, stock)).join("")}
       </div>
@@ -244,6 +410,7 @@ function renderStock(board, stock) {
   const url = externalUrl(stock.code);
   const site = document.getElementById("fastSite").textContent || "东方财富";
   const keyReason = `${stock.trigger}｜${stock.state}，风险${stock.risk}，评分${stock.score}`;
+  const favorite = isFavorite(stock.code);
 
   return `
     <div class="stock-row ${isSelected ? "selected" : ""}" data-board="${board.id}" data-stock="${stock.code}">
@@ -266,6 +433,7 @@ function renderStock(board, stock) {
         <span class="reason">${keyReason}</span>
       </div>
       <button class="mini-btn detail-toggle" type="button" data-board="${board.id}" data-stock="${stock.code}" aria-expanded="${isExpanded}">${isExpanded ? "收起" : "详情"}</button>
+      <button class="favorite-btn ${favorite ? "active" : ""}" type="button" data-favorite="${stock.code}" aria-label="${favorite ? "取消自选" : "加入自选"}">${favorite ? "★" : "☆"}</button>
     </div>
     <div class="details ${isExpanded ? "open" : ""}" data-detail="${stock.code}">
       <div class="detail-card">
@@ -288,6 +456,7 @@ function renderStock(board, stock) {
 
 function selectStock(boardId, stockCode) {
   selected = { boardId, stockCode };
+  saveUserState();
   renderBoards();
 }
 
@@ -324,9 +493,18 @@ async function loadRecommendations(options = {}) {
 }
 
 document.addEventListener("click", (event) => {
+  const favoriteBtn = event.target.closest(".favorite-btn");
+  if (favoriteBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    toggleFavorite(favoriteBtn.dataset.favorite);
+    return;
+  }
+
   const link = event.target.closest(".stock-link");
   if (link) {
     selected = { boardId: link.dataset.board, stockCode: link.dataset.stock };
+    saveUserState();
     return;
   }
 
@@ -341,6 +519,7 @@ document.addEventListener("click", (event) => {
   const row = event.target.closest(".stock-row");
   if (!row) return;
   selected = { boardId: row.dataset.board, stockCode: row.dataset.stock };
+  saveUserState();
   renderBoards();
 });
 
@@ -350,6 +529,36 @@ document.getElementById("refreshBtn").addEventListener("click", () => {
   loadRecommendations({ force: true });
 });
 
+document.getElementById("authBtn").addEventListener("click", showAuthModal);
+document.getElementById("authClose").addEventListener("click", hideAuthModal);
+document.getElementById("authModal").addEventListener("click", (event) => {
+  if (event.target.id === "authModal") hideAuthModal();
+});
+
+document.getElementById("authForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const username = document.getElementById("authUsername").value;
+  const password = document.getElementById("authPassword").value;
+  try {
+    await loginUser(username, password);
+  } catch (error) {
+    setAuthMessage(error instanceof Error ? error.message : String(error), "error");
+  }
+});
+
+document.getElementById("registerBtn").addEventListener("click", async () => {
+  const username = document.getElementById("authUsername").value;
+  const password = document.getElementById("authPassword").value;
+  try {
+    await registerUser(username, password);
+  } catch (error) {
+    setAuthMessage(error instanceof Error ? error.message : String(error), "error");
+  }
+});
+
+document.getElementById("logoutBtn").addEventListener("click", logoutUser);
+
+initAuth();
 chooseFastSite();
 updateMarketStatus();
 loadRecommendations();
