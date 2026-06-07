@@ -106,7 +106,8 @@ p {
 .primary-btn,
 .secondary-btn,
 .favorite-btn,
-.buy-btn {
+.buy-btn,
+.danger-btn {
   min-height: 30px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -173,9 +174,16 @@ p {
 .primary-btn:hover,
 .secondary-btn:hover,
 .favorite-btn:hover,
-.buy-btn:hover {
+.buy-btn:hover,
+.danger-btn:hover {
   border-color: #9dc1f5;
   background: var(--blue-bg);
+}
+
+.auth-btn {
+  display: inline-grid;
+  place-items: center;
+  text-decoration: none;
 }
 
 .layout {
@@ -845,6 +853,201 @@ p {
   font-weight: 800;
 }
 
+.account-layout {
+  max-width: 860px;
+}
+
+.account-page {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.account-section {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+}
+
+.account-section.disabled {
+  opacity: 0.62;
+}
+
+.section-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.section-line strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.account-form,
+.money-form,
+.trade-form {
+  display: grid;
+  gap: 8px;
+}
+
+.money-form {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.trade-form {
+  grid-template-columns: 84px minmax(70px, 1fr) minmax(84px, 1.1fr) minmax(76px, 0.9fr) minmax(76px, 0.9fr) 72px;
+}
+
+.trade-form select,
+.trade-form input {
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  padding: 6px 8px;
+  font: inherit;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.summary-grid div {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fbfcfe;
+  padding: 8px;
+}
+
+.summary-grid span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.summary-grid strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editable-list,
+.history-list,
+.advice-list {
+  display: grid;
+  gap: 8px;
+}
+
+.edit-row {
+  display: grid;
+  grid-template-columns: minmax(92px, 1.2fr) repeat(3, minmax(76px, 1fr)) minmax(104px, 0.9fr);
+  gap: 8px;
+  align-items: end;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfe;
+  padding: 8px;
+}
+
+.edit-title,
+.edit-row label {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.edit-title strong,
+.edit-title span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.edit-title span,
+.edit-row label span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.edit-row input {
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 7px;
+  font: inherit;
+}
+
+.edit-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.danger-btn {
+  min-height: 34px;
+  color: var(--red);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.history-row {
+  display: grid;
+  grid-template-columns: 44px minmax(72px, 1fr) 56px minmax(110px, 1.2fr) 76px;
+  gap: 6px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fbfcfe;
+  padding: 7px;
+  font-size: 12px;
+}
+
+.history-row strong,
+.history-row em,
+.history-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-row em {
+  color: var(--text);
+  font-style: normal;
+}
+
+.history-row small {
+  color: var(--muted);
+}
+
+.advice-row {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #c9e8df;
+  border-radius: 7px;
+  background: var(--blue-bg);
+  padding: 8px;
+}
+
+.advice-row span {
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 @media (max-width: 1180px) {
   .layout {
     grid-template-columns: 1fr;
@@ -930,6 +1133,22 @@ body {
   gap: 10px;
   padding-top: 10px;
   padding-bottom: 18px;
+}
+
+.account-layout {
+  max-width: 430px;
+}
+
+.money-form,
+.trade-form,
+.summary-grid,
+.edit-row,
+.history-row {
+  grid-template-columns: 1fr;
+}
+
+.edit-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .section-head {

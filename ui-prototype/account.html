@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>用户中心 · 尾盘买入法</title>
+    <link rel="stylesheet" href="./style.css">
+  </head>
+  <body>
+    <header class="topbar account-topbar">
+      <div class="brand">
+        <span class="brand-mark">A</span>
+        <div>
+          <h1>用户中心</h1>
+          <p>资金 · 持仓 · 历史</p>
+        </div>
+      </div>
+
+      <a class="auth-btn" href="./index.html">看板</a>
+    </header>
+
+    <main class="layout account-layout">
+      <section class="account-page">
+        <div class="section-head">
+          <div>
+            <span class="eyebrow">Account</span>
+            <h2 id="accountTitle">账户数据</h2>
+          </div>
+          <p>本机保存，按账号隔离，后续可升级到服务端同步</p>
+        </div>
+
+        <section class="account-section" id="authSection">
+          <div class="section-line">
+            <strong>登录 / 注册</strong>
+            <span id="authState">未登录</span>
+          </div>
+
+          <form class="account-form" id="accountAuthForm">
+            <label class="field">
+              <span>账号</span>
+              <input id="accountUsername" autocomplete="username" maxlength="24" required>
+            </label>
+            <label class="field">
+              <span>密码</span>
+              <input id="accountPassword" type="password" autocomplete="current-password" minlength="4" required>
+            </label>
+            <p class="auth-message" id="accountMessage"></p>
+            <div class="auth-actions">
+              <button class="primary-btn" type="submit">登录</button>
+              <button class="secondary-btn" id="accountRegisterBtn" type="button">注册</button>
+              <button class="secondary-btn" id="accountLogoutBtn" type="button">退出</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="account-section locked" id="dataSection">
+          <div class="section-line">
+            <strong>账户资金</strong>
+            <span id="accountUserLabel">请先登录</span>
+          </div>
+
+          <form class="money-form" id="moneyForm">
+            <label class="field">
+              <span>账户总金额</span>
+              <input id="initialCapital" type="number" inputmode="decimal" min="0" step="0.01">
+            </label>
+            <label class="field">
+              <span>可用现金</span>
+              <input id="cashAmount" type="number" inputmode="decimal" step="0.01">
+            </label>
+            <button class="primary-btn" type="submit">保存资金</button>
+          </form>
+
+          <div class="summary-grid">
+            <div><span>账户总金额</span><strong id="sumInitial">--</strong></div>
+            <div><span>现金</span><strong id="sumCash">--</strong></div>
+            <div><span>持仓市值</span><strong id="sumMarket">--</strong></div>
+            <div><span>总资产</span><strong id="sumAssets">--</strong></div>
+            <div><span>浮动盈亏</span><strong id="sumFloat">--</strong></div>
+            <div><span>总盈亏</span><strong id="sumTotalPnl">--</strong></div>
+          </div>
+        </section>
+
+        <section class="account-section locked" id="positionsSection">
+          <div class="section-line">
+            <strong>持仓管理</strong>
+            <span>数量、成本、现价都可修改</span>
+          </div>
+          <div class="editable-list" id="positionsList"></div>
+        </section>
+
+        <section class="account-section locked" id="tradeSection">
+          <div class="section-line">
+            <strong>手动记录买卖</strong>
+            <span>用于补录历史</span>
+          </div>
+          <form class="trade-form" id="tradeForm">
+            <select id="tradeType">
+              <option value="BUY">买入</option>
+              <option value="SELL">卖出</option>
+            </select>
+            <input id="tradeCode" placeholder="代码" required>
+            <input id="tradeName" placeholder="名称" required>
+            <input id="tradeQuantity" type="number" min="1" step="100" placeholder="数量" required>
+            <input id="tradePrice" type="number" min="0.01" step="0.01" placeholder="价格" required>
+            <button class="primary-btn" type="submit">记录</button>
+          </form>
+        </section>
+
+        <section class="account-section locked">
+          <div class="section-line">
+            <strong>卖盘建议</strong>
+            <span>预留模块</span>
+          </div>
+          <div class="advice-list" id="sellAdviceList"></div>
+        </section>
+
+        <section class="account-section locked">
+          <div class="section-line">
+            <strong>历史买卖</strong>
+            <span id="tradeCount">0 条</span>
+          </div>
+          <div class="history-list" id="historyList"></div>
+        </section>
+      </section>
+    </main>
+
+    <script src="./account.js"></script>
+  </body>
+</html>

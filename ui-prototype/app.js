@@ -68,6 +68,32 @@ function savePositions() {
   writeJson(scopedKey("positions"), positions);
 }
 
+function loadAccount() {
+  return readJson(scopedKey("account"), {
+    initialCapital: 0,
+    cash: 0,
+    updatedAt: ""
+  });
+}
+
+function saveAccount(account) {
+  writeJson(scopedKey("account"), {
+    initialCapital: Number(account.initialCapital || 0),
+    cash: Number(account.cash || 0),
+    updatedAt: new Date().toISOString()
+  });
+}
+
+function appendTrade(trade) {
+  const trades = readJson(scopedKey("trades"), []);
+  trades.unshift({
+    id: `t_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+    createdAt: new Date().toISOString(),
+    ...trade
+  });
+  writeJson(scopedKey("trades"), trades.slice(0, 300));
+}
+
 function formatCurrency(value) {
   const amount = Number(value || 0);
   if (!Number.isFinite(amount)) return "--";
@@ -105,24 +131,21 @@ function setAuthMessage(message, type = "") {
 }
 
 function showAuthModal() {
-  document.getElementById("authModal").classList.remove("hidden");
-  renderPortfolio();
-  setAuthMessage(currentUser ? `当前账号：${currentUser.username}` : "");
-  const input = document.getElementById("authUsername");
-  if (input && !currentUser) input.focus();
+  window.location.href = "./account.html?login=1";
 }
 
 function hideAuthModal() {
-  document.getElementById("authModal").classList.add("hidden");
   setAuthMessage("");
 }
 
 function updateAuthUi() {
   const label = document.getElementById("authLabel");
+  const accountLink = document.getElementById("accountLink");
   const title = document.getElementById("authTitle");
   const subtitle = document.getElementById("authSubtitle");
   const logoutBtn = document.getElementById("logoutBtn");
   if (label) label.textContent = currentUser ? currentUser.username.slice(0, 6) : "登录";
+  if (accountLink) accountLink.textContent = currentUser ? currentUser.username.slice(0, 6) : "账户";
   if (title) title.textContent = currentUser ? "用户中心" : "用户登录";
   if (subtitle) subtitle.textContent = currentUser ? "自选和看板状态已按账号隔离" : "本机保存，按账号隔离自选和看板状态";
   if (logoutBtn) logoutBtn.classList.toggle("hidden", !currentUser);
@@ -197,8 +220,7 @@ function startUserSession(user) {
 }
 
 function showLoginRequired() {
-  showAuthModal();
-  setAuthMessage("请先登录账号，再记录买入数量", "error");
+  window.location.href = "./account.html?login=1";
 }
 
 function openBuyModal(code) {
@@ -251,7 +273,20 @@ function recordBuy(quantity, price) {
     lastPrice: buyPrice,
     updatedAt: new Date().toISOString()
   };
+  const account = loadAccount();
+  const amount = qty * buyPrice;
+  account.cash = Number(account.cash || 0) - amount;
   savePositions();
+  saveAccount(account);
+  appendTrade({
+    type: "BUY",
+    code,
+    name: buyTarget.name,
+    quantity: qty,
+    price: buyPrice,
+    amount,
+    note: "主看板记录买入"
+  });
   renderPortfolio();
   updateAuthUi();
 }
@@ -665,13 +700,17 @@ document.getElementById("refreshBtn").addEventListener("click", () => {
   loadRecommendations({ force: true });
 });
 
-document.getElementById("authBtn").addEventListener("click", showAuthModal);
-document.getElementById("authClose").addEventListener("click", hideAuthModal);
-document.getElementById("authModal").addEventListener("click", (event) => {
+const authBtn = document.getElementById("authBtn");
+if (authBtn) authBtn.addEventListener("click", showAuthModal);
+const authClose = document.getElementById("authClose");
+if (authClose) authClose.addEventListener("click", hideAuthModal);
+const authModal = document.getElementById("authModal");
+if (authModal) authModal.addEventListener("click", (event) => {
   if (event.target.id === "authModal") hideAuthModal();
 });
 
-document.getElementById("authForm").addEventListener("submit", async (event) => {
+const authForm = document.getElementById("authForm");
+if (authForm) authForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const username = document.getElementById("authUsername").value;
   const password = document.getElementById("authPassword").value;
@@ -682,7 +721,8 @@ document.getElementById("authForm").addEventListener("submit", async (event) => 
   }
 });
 
-document.getElementById("registerBtn").addEventListener("click", async () => {
+const registerBtn = document.getElementById("registerBtn");
+if (registerBtn) registerBtn.addEventListener("click", async () => {
   const username = document.getElementById("authUsername").value;
   const password = document.getElementById("authPassword").value;
   try {
@@ -692,7 +732,8 @@ document.getElementById("registerBtn").addEventListener("click", async () => {
   }
 });
 
-document.getElementById("logoutBtn").addEventListener("click", logoutUser);
+const logoutBtn = document.getElementById("logoutBtn");
+if (logoutBtn) logoutBtn.addEventListener("click", logoutUser);
 document.getElementById("buyClose").addEventListener("click", closeBuyModal);
 document.getElementById("buyCancel").addEventListener("click", closeBuyModal);
 document.getElementById("buyModal").addEventListener("click", (event) => {

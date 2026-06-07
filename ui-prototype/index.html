@@ -30,9 +30,9 @@
         刷新
       </button>
 
-      <button class="auth-btn" id="authBtn" type="button" aria-label="用户登录">
-        <span id="authLabel">登录</span>
-      </button>
+      <a class="auth-btn" id="accountLink" href="./account.html" aria-label="进入用户中心">
+        账户
+      </a>
     </header>
 
     <main class="layout">
@@ -49,44 +49,6 @@
         <div id="boards" class="boards"></div>
       </section>
     </main>
-
-    <div class="auth-modal hidden" id="authModal" role="dialog" aria-modal="true" aria-labelledby="authTitle">
-      <form class="auth-card" id="authForm">
-        <div class="auth-head">
-          <div>
-            <h2 id="authTitle">用户登录</h2>
-            <p id="authSubtitle">本机保存，按账号隔离自选和看板状态</p>
-          </div>
-          <button class="icon-btn" id="authClose" type="button" aria-label="关闭">×</button>
-        </div>
-
-        <label class="field">
-          <span>账号</span>
-          <input id="authUsername" name="username" autocomplete="username" maxlength="24" required>
-        </label>
-
-        <label class="field">
-          <span>密码</span>
-          <input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="4" required>
-        </label>
-
-        <p class="auth-message" id="authMessage"></p>
-
-        <div class="auth-actions">
-          <button class="primary-btn" id="loginSubmit" type="submit">登录</button>
-          <button class="secondary-btn" id="registerBtn" type="button">注册</button>
-          <button class="secondary-btn hidden" id="logoutBtn" type="button">退出</button>
-        </div>
-
-        <div class="portfolio-panel hidden" id="portfolioPanel">
-          <div class="portfolio-head">
-            <strong>我的持仓</strong>
-            <span id="portfolioTotal">总金额 --</span>
-          </div>
-          <div class="portfolio-list" id="portfolioList"></div>
-        </div>
-      </form>
-    </div>
 
     <div class="auth-modal hidden" id="buyModal" role="dialog" aria-modal="true" aria-labelledby="buyTitle">
       <form class="auth-card" id="buyForm">
