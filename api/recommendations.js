@@ -172,6 +172,114 @@ async function fetchJson(host, fs, fields, pz, timeoutMs = 4500, fid = "f3") {
   }
 }
 
+function stockSecid(code) {
+  const value = String(code);
+  return `${value.startsWith("6") ? "1" : "0"}.${value}`;
+}
+
+async function fetchDailyTrend(code, timeoutMs = 3500) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const params = new URLSearchParams({
+      secid: stockSecid(code),
+      klt: "101",
+      fqt: "1",
+      end: "20500101",
+      lmt: "40",
+      fields1: "f1,f2,f3,f4,f5,f6",
+      fields2: "f51,f52,f53,f54,f55,f56"
+    });
+    const response = await fetch(`https://push2his.eastmoney.com/api/qt/stock/kline/get?${params}`, {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        Referer: "https://quote.eastmoney.com/",
+        Accept: "application/json,text/plain,*/*"
+      },
+      signal: controller.signal
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    const klines = payload && payload.data && payload.data.klines;
+    const closes = Array.isArray(klines)
+      ? klines.map((line) => Number(String(line).split(",")[2])).filter((value) => Number.isFinite(value))
+      : [];
+    return calculateDailyTrend(closes);
+  } catch {
+    return fetchSinaDailyTrend(code, timeoutMs);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function sinaSymbol(code) {
+  const value = String(code);
+  if (value.startsWith("6")) return `sh${value}`;
+  if (["4", "8", "9"].some((prefix) => value.startsWith(prefix))) return `bj${value}`;
+  return `sz${value}`;
+}
+
+async function fetchSinaDailyTrend(code, timeoutMs = 3500) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const url = `https://quotes.sina.cn/cn/api/jsonp_v2.php/var%20k=/CN_MarketDataService.getKLineData?symbol=${sinaSymbol(code)}&scale=240&ma=no&datalen=40`;
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        Referer: "https://finance.sina.com.cn/",
+        Accept: "application/javascript,text/javascript,*/*"
+      },
+      signal: controller.signal
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const text = await response.text();
+    const start = text.indexOf("[");
+    const end = text.lastIndexOf("]");
+    if (start < 0 || end <= start) return dailyTrendUnknown();
+    const rows = JSON.parse(text.slice(start, end + 1));
+    const closes = Array.isArray(rows)
+      ? rows.map((row) => Number(row.close)).filter((value) => Number.isFinite(value))
+      : [];
+    return calculateDailyTrend(closes);
+  } catch {
+    return dailyTrendUnknown();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function calculateDailyTrend(closes) {
+  if (!Array.isArray(closes) || closes.length < 20) return dailyTrendUnknown();
+  const ma = (period) => closes.slice(-period).reduce((sum, value) => sum + value, 0) / period;
+  const close = closes[closes.length - 1];
+  const ma5 = ma(5);
+  const ma10 = ma(10);
+  const ma20 = ma(20);
+  const bullish = close >= ma5 && ma5 > ma10 && ma10 > ma20;
+  return {
+    label: bullish ? "多头" : "未多头",
+    bullish,
+    close,
+    ma5,
+    ma10,
+    ma20,
+    detail: `收${close.toFixed(2)} MA5 ${ma5.toFixed(2)} MA10 ${ma10.toFixed(2)} MA20 ${ma20.toFixed(2)}`
+  };
+}
+
+function dailyTrendUnknown() {
+  return {
+    label: "待确认",
+    bullish: false,
+    close: 0,
+    ma5: 0,
+    ma10: 0,
+    ma20: 0,
+    detail: "日线数据暂不可用"
+  };
+}
+
 async function chooseHost() {
   const tests = await Promise.allSettled(
     HOSTS.map(async (host) => {
@@ -441,7 +549,7 @@ function stockRisk(row, state) {
   return "补涨";
 }
 
-function stockScore(row, boardScore, state) {
+function stockScore(row, boardScore, state, trend = dailyTrendUnknown()) {
   const change = Math.max(pct(row), 0);
   const turnover = number(row.f8, 0);
   const volumeRatio = number(row.f10, 0);
@@ -454,7 +562,8 @@ function stockScore(row, boardScore, state) {
     : 8;
   const turnoverScore = turnover >= 5 && turnover <= 22 ? 10 : turnover > 22 ? 5 : 6;
   const positionScore = change >= 5 && change <= 16 ? 8 : change > 18 ? 2 : 4;
-  return Math.round(Math.min(96, boardScore * 0.33 + stateScore + change * 0.55 + turnoverScore + positionScore + Math.min(volumeRatio, 5)));
+  const trendScore = trend.bullish ? 5 : trend.label === "待确认" ? 0 : -2;
+  return Math.round(Math.min(96, boardScore * 0.33 + stateScore + change * 0.55 + turnoverScore + positionScore + Math.min(volumeRatio, 5) + trendScore));
 }
 
 function stockConfidence(score, risk, market) {
@@ -498,15 +607,16 @@ function stockReason(boardName, state, risk, score, action, trigger) {
   return `${boardName}方向${state}，${action}，${trigger}，风险${risk}，评分${score}`;
 }
 
-function stockReasons(row, board, state) {
+function stockReasons(row, board, state, trend = dailyTrendUnknown()) {
   const reasons = [];
   reasons.push(`所属板块${board.name}评分${board.score}`);
   reasons.push(`个股状态${state}，涨幅${number(row.f3, 0).toFixed(2)}%`);
   reasons.push(`换手${number(row.f8, 0).toFixed(1)}%，量比${number(row.f10, 0).toFixed(1)}`);
+  reasons.push(`日线${trend.label}排列：${trend.detail}`);
   if (board.front20) reasons.push(`同板块有${board.front20}只20cm/30cm前排`);
   if (board.support10) reasons.push(`同板块有${board.support10}只10cm助攻`);
   reasons.push("尾盘买入只在14:30后确认承接，不提前抢跑");
-  return reasons.slice(0, 5);
+  return reasons.slice(0, 6);
 }
 
 function stockRisks(boardName, risk, market) {
@@ -534,10 +644,10 @@ function nextDayPlan(market) {
   return ["强竞价：第一波冲高分批兑现", "平竞价：观察10-30分钟量价承接", "弱竞价：优先卖出，不把尾盘短线做成长线"];
 }
 
-function mapStock(row, board, market) {
+function mapStock(row, board, market, trend = dailyTrendUnknown()) {
   const state = stockState(row);
   const risk = stockRisk(row, state);
-  const score = stockScore(row, board.score, state);
+  const score = stockScore(row, board.score, state, trend);
   const action = stockAction(score, risk, state, board, market);
   const confidence = stockConfidence(score, risk, market);
   const trigger = stockTrigger(row, market);
@@ -556,8 +666,9 @@ function mapStock(row, board, market) {
     action,
     confidence,
     trigger,
+    trend,
     reason: stockReason(board.name, state, risk, score, action, trigger),
-    reasons: stockReasons(row, board, state),
+    reasons: stockReasons(row, board, state, trend),
     risks: stockRisks(board.name, risk, market),
     plan: nextDayPlan(market)
   };
@@ -585,10 +696,10 @@ async function buildRecommendations() {
     })
   );
 
-  const scored = normalizeScores(enriched)
+  const scored = await Promise.all(normalizeScores(enriched)
     .sort((a, b) => b.score - a.score)
     .slice(0, 3)
-    .map((item, index) => {
+    .map(async (item, index) => {
       const metrics = boardMetrics(item.board, item.rows);
       const front20 = metrics.front20;
       const support10 = metrics.support10;
@@ -622,13 +733,17 @@ async function buildRecommendations() {
           sealed10: metrics.sealed10
         }
       };
-      const stocks = item.rows
+      const candidateRows = item.rows
         .filter(isLateDayCandidate)
-        .map((row) => mapStock(row, board, market))
-        .sort((a, b) => b.score - a.score || b.change - a.change)
+        .sort((a, b) => pct(b) - pct(a))
+        .slice(0, 8);
+      const trends = await Promise.all(candidateRows.map((row) => fetchDailyTrend(row.f12)));
+      const stocks = candidateRows
+        .map((row, rowIndex) => mapStock(row, board, market, trends[rowIndex]))
+        .sort((a, b) => b.score - a.score || Number(b.trend.bullish) - Number(a.trend.bullish) || b.change - a.change)
         .slice(0, 5);
       return { ...board, stocks };
-    });
+    }));
   const phase = phaseAdvice(market);
 
   return {

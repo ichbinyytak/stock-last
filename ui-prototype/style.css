@@ -389,7 +389,8 @@ p {
 .risk-high,
 .action-tag,
 .tag,
-.state-tag {
+.state-tag,
+.trend-tag {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -526,6 +527,16 @@ p {
 .state-tag {
   background: var(--blue-bg);
   color: var(--blue);
+}
+
+.trend-tag {
+  background: #eef2f7;
+  color: #475569;
+}
+
+.trend-tag.trend-bull {
+  background: var(--green-bg);
+  color: var(--green);
 }
 
 .action-tag {
@@ -1145,7 +1156,8 @@ body {
 
 .action-tag,
 .state-tag,
-.tag {
+.tag,
+.trend-tag {
   flex: 0 0 auto;
   min-height: 20px;
   padding: 2px 5px;

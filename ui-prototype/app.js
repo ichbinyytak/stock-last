@@ -228,6 +228,7 @@ function recordBuy(quantity, price) {
   const qty = Number(quantity);
   const buyPrice = Number(price);
   if (!Number.isFinite(qty) || qty <= 0) throw new Error("请输入有效买入数量");
+  if (!Number.isInteger(qty) || qty % 100 !== 0) throw new Error("A股买入数量需为100股的整数倍");
   if (!Number.isFinite(buyPrice) || buyPrice <= 0) throw new Error("请输入有效买入价格");
   const code = String(buyTarget.code);
   const old = positions[code] || {
@@ -554,6 +555,7 @@ function renderStock(board, stock) {
       <div class="stock-meta">
         <span class="action-tag">${stock.action}</span>
         <span class="state-tag">${stock.state}</span>
+        <span class="trend-tag ${stock.trend && stock.trend.bullish ? "trend-bull" : ""}">日${stock.trend ? stock.trend.label : "待确认"}</span>
         <span class="tag">${stock.risk}</span>
         <span class="reason">${keyReason}</span>
       </div>
