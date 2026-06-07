@@ -214,6 +214,23 @@ function isTradableStock(row) {
   return true;
 }
 
+function isNearLimit(row) {
+  const code = String(row.f12);
+  const change = pct(row);
+  if (["920", "83", "87", "43"].some((prefix) => code.startsWith(prefix))) return change >= 29;
+  if (["30", "68"].some((prefix) => code.startsWith(prefix))) return change >= 19;
+  if (is10(code)) return change >= 9.6;
+  return false;
+}
+
+function isLateDayCandidate(row) {
+  const change = pct(row);
+  const turnover = number(row.f8, 0);
+  if (!isTradableStock(row)) return false;
+  if (isNearLimit(row)) return false;
+  return change >= 3 && change <= 18.8 && turnover >= 2;
+}
+
 function formatMoney(value) {
   const amount = number(value, 0);
   if (amount >= 100000000) return `${(amount / 100000000).toFixed(1)}亿`;
@@ -428,11 +445,11 @@ function stockScore(row, boardScore, state) {
   const change = Math.max(pct(row), 0);
   const turnover = number(row.f8, 0);
   const volumeRatio = number(row.f10, 0);
-  const stateScore = state.includes("30cm") ? 30
-    : state.includes("20cm确认") ? 25
+  const stateScore = state.includes("30cm") ? 8
+    : state.includes("20cm确认") ? 10
     : state.includes("弹性前排") ? 26
     : state.includes("弹性承接") ? 22
-    : state.includes("10cm确认") ? 18
+    : state.includes("10cm确认") ? 8
     : state.includes("10cm助攻") ? 14
     : 8;
   const turnoverScore = turnover >= 5 && turnover <= 22 ? 10 : turnover > 22 ? 5 : 6;
@@ -469,6 +486,7 @@ function stockAction(score, risk, state, board, market) {
 
 function stockTrigger(row, market) {
   const change = number(row.f3, 0);
+  if (isNearLimit(row)) return "涨停/近封只作板块锚点，不列为尾盘买点";
   if (market.mode !== "late-day") return "14:30后再确认均价线和收盘强区";
   if (change >= 18) return "近高位只看开板回封或强承接";
   if (change >= 8) return "站稳均价线，尾盘低点抬高";
@@ -574,12 +592,16 @@ async function buildRecommendations() {
       const front20 = metrics.front20;
       const support10 = metrics.support10;
       const risk = boardRisk(item.board, front20, support10);
+      const anchors = item.rows
+        .filter((row) => isTradableStock(row) && isNearLimit(row))
+        .slice(0, 3)
+        .map((row) => `${row.f14}${number(row.f3, 0).toFixed(1)}%`);
       const board = {
         id: String(item.board.f12),
         code: String(item.board.f12),
         rank: index + 1,
         name: item.board.f14 || "--",
-        theme: `领涨 ${item.board.f128 || "待确认"}`,
+        theme: anchors.length ? `锚点 ${anchors.join(" / ")}` : `领涨 ${item.board.f128 || "待确认"}`,
         change: number(item.board.f3, 0),
         score: item.score,
         front20,
@@ -600,7 +622,7 @@ async function buildRecommendations() {
         }
       };
       const stocks = item.rows
-        .filter((row) => pct(row) > 0 && isTradableStock(row))
+        .filter(isLateDayCandidate)
         .map((row) => mapStock(row, board, market))
         .sort((a, b) => b.score - a.score || b.change - a.change)
         .slice(0, 5);
