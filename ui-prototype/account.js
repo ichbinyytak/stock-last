@@ -16,6 +16,8 @@ let trades = [];
 let paperEvents = [];
 let paperMode = false;
 let paperSnapshot = null;
+let paperStrategy = {};
+let strategyFields = [];
 let editingCode = "";
 let quoteTimer = null;
 
@@ -217,6 +219,8 @@ function loadUserData() {
   trades = readJson(scopedKey("trades"), []);
   paperEvents = [];
   paperSnapshot = null;
+  paperStrategy = {};
+  strategyFields = [];
 }
 
 function savePositions() {
@@ -311,9 +315,11 @@ function syncPaperAccount(snapshot) {
   positions = snapshot.positions || {};
   trades = Array.isArray(snapshot.trades) ? snapshot.trades : [];
   paperEvents = Array.isArray(snapshot.events) ? snapshot.events : [];
+  paperStrategy = snapshot.strategy || {};
+  strategyFields = Array.isArray(snapshot.strategyFields) ? snapshot.strategyFields : [];
 }
 
-async function loadPaperAccount(run = false) {
+async function loadPaperAccount(run = false, reschedule = true) {
   if (!currentUser || !paperMode) return;
   const response = await fetch(`/api/paper-trading${run ? "?run=1" : ""}`, {
     method: run ? "POST" : "GET",
@@ -324,9 +330,26 @@ async function loadPaperAccount(run = false) {
   if (!response.ok) throw new Error(payload.error || "加载模拟盘失败");
   syncPaperAccount(payload.account);
   renderAll();
-  schedulePositionRefresh();
+  if (reschedule) schedulePositionRefresh();
   const result = payload.run ? `买入 ${payload.run.bought} / 卖出 ${payload.run.sold}` : "模拟盘已同步";
   setMessage(result, "ok");
+}
+
+async function savePaperStrategy(strategy) {
+  if (!currentUser || !paperMode) throw new Error("只有 test 自动模拟盘可以调整策略");
+  const response = await fetch("/api/paper-trading", {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${authToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ strategy })
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || "保存策略失败");
+  syncPaperAccount(payload.account);
+  renderAll();
+  setMessage("策略参数已保存", "ok");
 }
 
 function logoutUser() {
@@ -339,6 +362,8 @@ function logoutUser() {
   paperMode = false;
   paperSnapshot = null;
   paperEvents = [];
+  paperStrategy = {};
+  strategyFields = [];
   localStorage.removeItem(SESSION_KEY);
   localStorage.removeItem(AUTH_TOKEN_KEY);
   positions = {};
@@ -377,11 +402,13 @@ function renderAll() {
   document.getElementById("openTradeBtn").disabled = !logged || paperMode;
   document.getElementById("syncPaperBtn").classList.toggle("hidden", !paperMode);
   document.getElementById("runPaperBtn").classList.toggle("hidden", !paperMode);
+  document.getElementById("paperStrategySection").classList.toggle("hidden", !paperMode);
   document.getElementById("accountLoginNote").classList.toggle("hidden", logged);
   document.querySelectorAll(".auth-only").forEach((node) => node.classList.toggle("hidden", !logged));
   document.getElementById("adminSection").classList.toggle("hidden", !isAdmin);
   document.querySelectorAll(".locked").forEach((node) => node.classList.toggle("disabled", !logged));
   renderPaperStatus();
+  renderStrategyPanel();
 
   document.getElementById("initialCapital").value = logged ? Number(account.initialCapital || 0).toFixed(2) : "";
   document.getElementById("cashAmount").value = logged ? Number(account.cash || 0).toFixed(2) : "";
@@ -420,6 +447,64 @@ function renderPaperStatus() {
     <span>操作 ${summary.tradeCount || trades.length}</span>
     <span>运行 ${lastRun}</span>
   `;
+}
+
+function renderStrategyPanel() {
+  const list = document.getElementById("strategyList");
+  if (!list) return;
+  if (!paperMode) {
+    list.innerHTML = "";
+    return;
+  }
+  if (!strategyFields.length) {
+    list.innerHTML = `<div class="portfolio-empty">策略参数同步后显示</div>`;
+    return;
+  }
+  list.innerHTML = strategyFields.map((field) => {
+    const value = paperStrategy[field.key] ?? field.defaultValue;
+    const control = field.type === "boolean"
+      ? `<label class="strategy-toggle"><input data-strategy-key="${field.key}" type="checkbox" ${value ? "checked" : ""}><span>${value ? "开" : "关"}</span></label>`
+      : `<input data-strategy-key="${field.key}" type="number" min="${field.min}" max="${field.max}" step="${field.step}" value="${Number(value)}">`;
+    return `
+      <div class="strategy-row">
+        <strong>${field.label}</strong>
+        ${control}
+        <span>${field.unit || ""}</span>
+        <button class="secondary-btn strategy-detail-btn" data-strategy-detail="${field.key}" type="button">详情</button>
+      </div>
+    `;
+  }).join("");
+}
+
+function readStrategyForm(useDefaults = false) {
+  const next = {};
+  strategyFields.forEach((field) => {
+    if (useDefaults) {
+      next[field.key] = field.defaultValue;
+      return;
+    }
+    const input = document.querySelector(`[data-strategy-key="${field.key}"]`);
+    if (!input) return;
+    next[field.key] = field.type === "boolean" ? input.checked : Number(input.value);
+  });
+  return next;
+}
+
+function openStrategyDetail(key) {
+  const field = strategyFields.find((item) => item.key === key);
+  if (!field) return;
+  document.getElementById("strategyDetailTitle").textContent = field.label;
+  document.getElementById("strategyDetailSub").textContent = `默认 ${field.defaultValue}${field.unit || ""} · 范围 ${field.type === "boolean" ? "开/关" : `${field.min}-${field.max}${field.unit || ""}`}`;
+  document.getElementById("strategyDetailBody").innerHTML = `
+    <p class="sell-detail-main">${field.detail}</p>
+    <div class="sell-detail-kv">
+      <span>参数名</span><strong>${field.key}</strong>
+      <span>当前值</span><strong>${paperStrategy[field.key] ?? field.defaultValue}${field.unit || ""}</strong>
+      <span>默认值</span><strong>${field.defaultValue}${field.unit || ""}</strong>
+      <span>步进</span><strong>${field.type === "boolean" ? "开关" : field.step}</strong>
+    </div>
+  `;
+  openModal("strategyDetailModal");
 }
 
 function renderPositions() {
@@ -557,7 +642,7 @@ function renderAdminUsers(rows = []) {
       <strong>${item.username}</strong>
       <b>${item.key}</b>
       <em>${formatDate(item.updatedAt || item.createdAt)}</em>
-      <small>${item.seeded ? "默认" : "服务器"}</small>
+      <button class="secondary-btn reset-managed-user" data-user-key="${item.key}" data-user-name="${item.username}" type="button">重设</button>
     </div>
   `).join("");
 }
@@ -678,7 +763,7 @@ function saveEditedPosition(row) {
 async function refreshPositionQuotes() {
   if (!currentUser) return;
   if (paperMode) {
-    await loadPaperAccount(false);
+    await loadPaperAccount(false, false);
     return;
   }
   const rows = positionRows();
@@ -765,6 +850,40 @@ document.getElementById("runPaperBtn").addEventListener("click", () => {
   loadPaperAccount(true).catch((error) => {
     setMessage(error instanceof Error ? error.message : String(error), "error");
   });
+});
+document.getElementById("saveStrategyBtn").addEventListener("click", () => {
+  savePaperStrategy(readStrategyForm(false)).catch((error) => {
+    setMessage(error instanceof Error ? error.message : String(error), "error");
+  });
+});
+document.getElementById("resetStrategyBtn").addEventListener("click", () => {
+  savePaperStrategy(readStrategyForm(true)).catch((error) => {
+    setMessage(error instanceof Error ? error.message : String(error), "error");
+  });
+});
+
+document.getElementById("strategyList").addEventListener("click", (event) => {
+  const detail = event.target.closest("[data-strategy-detail]");
+  if (detail) {
+    openStrategyDetail(detail.dataset.strategyDetail);
+  }
+});
+
+document.getElementById("strategyList").addEventListener("change", (event) => {
+  if (event.target.matches('input[type="checkbox"][data-strategy-key]')) {
+    const label = event.target.closest(".strategy-toggle");
+    const text = label && label.querySelector("span");
+    if (text) text.textContent = event.target.checked ? "开" : "关";
+  }
+});
+
+document.getElementById("adminUserList").addEventListener("click", (event) => {
+  const button = event.target.closest(".reset-managed-user");
+  if (!button) return;
+  document.getElementById("newManagedUsername").value = button.dataset.userName || button.dataset.userKey || "";
+  document.getElementById("newManagedPassword").value = "";
+  openModal("adminUserModal");
+  document.getElementById("newManagedPassword").focus();
 });
 
 document.addEventListener("click", (event) => {

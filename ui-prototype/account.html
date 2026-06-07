@@ -52,6 +52,18 @@
 
         <div class="paper-status-line auth-only hidden" id="paperStatusLine"></div>
 
+        <section class="account-section auth-only hidden" id="paperStrategySection">
+          <div class="section-line">
+            <strong>策略参数</strong>
+            <span>test 自动模拟盘</span>
+          </div>
+          <div class="strategy-list" id="strategyList"></div>
+          <div class="strategy-actions">
+            <button class="secondary-btn" id="resetStrategyBtn" type="button">默认</button>
+            <button class="primary-btn" id="saveStrategyBtn" type="button">保存策略</button>
+          </div>
+        </section>
+
         <section class="account-section admin-only hidden" id="adminSection">
           <div class="section-line">
             <strong>用户管理</strong>
@@ -161,6 +173,19 @@
           <button class="icon-btn" data-close="sellDetailModal" type="button" aria-label="关闭">×</button>
         </div>
         <div class="sell-detail-body" id="sellDetailBody"></div>
+      </div>
+    </div>
+
+    <div class="auth-modal hidden" id="strategyDetailModal" role="dialog" aria-modal="true" aria-labelledby="strategyDetailTitle">
+      <div class="auth-card sell-detail-card">
+        <div class="auth-head">
+          <div>
+            <h2 id="strategyDetailTitle">策略参数详情</h2>
+            <p id="strategyDetailSub">默认值与调整影响</p>
+          </div>
+          <button class="icon-btn" data-close="strategyDetailModal" type="button" aria-label="关闭">×</button>
+        </div>
+        <div class="sell-detail-body" id="strategyDetailBody"></div>
       </div>
     </div>
 
