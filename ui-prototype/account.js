@@ -13,6 +13,9 @@ let account = {
   updatedAt: ""
 };
 let trades = [];
+let paperEvents = [];
+let paperMode = false;
+let paperSnapshot = null;
 let editingCode = "";
 let quoteTimer = null;
 
@@ -212,6 +215,8 @@ function loadUserData() {
     updatedAt: ""
   });
   trades = readJson(scopedKey("trades"), []);
+  paperEvents = [];
+  paperSnapshot = null;
 }
 
 function savePositions() {
@@ -242,11 +247,15 @@ function appendTrade(trade) {
 function startUserSession(user, token = authToken) {
   currentUser = user;
   authToken = token || "";
+  paperMode = currentUser && currentUser.key === "test";
   localStorage.setItem(SESSION_KEY, user.key);
   if (authToken) localStorage.setItem(AUTH_TOKEN_KEY, authToken);
   loadUserData();
   renderAll();
   schedulePositionRefresh();
+  if (paperMode) loadPaperAccount(false).catch((error) => {
+    setMessage(error instanceof Error ? error.message : String(error), "error");
+  });
   if (currentUser.role === "admin") loadAdminUsers();
 }
 
@@ -291,6 +300,35 @@ async function createManagedUser(username, password) {
   renderAdminUsers(payload.users || []);
 }
 
+function syncPaperAccount(snapshot) {
+  paperSnapshot = snapshot;
+  const summary = snapshot.summary || {};
+  account = {
+    initialCapital: Number(summary.initialCapital || snapshot.initialCapital || 100000),
+    cash: Number(summary.cash || snapshot.cash || 0),
+    updatedAt: snapshot.updatedAt || ""
+  };
+  positions = snapshot.positions || {};
+  trades = Array.isArray(snapshot.trades) ? snapshot.trades : [];
+  paperEvents = Array.isArray(snapshot.events) ? snapshot.events : [];
+}
+
+async function loadPaperAccount(run = false) {
+  if (!currentUser || !paperMode) return;
+  const response = await fetch(`/api/paper-trading${run ? "?run=1" : ""}`, {
+    method: run ? "POST" : "GET",
+    headers: { Authorization: `Bearer ${authToken}` },
+    cache: "no-store"
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || "加载模拟盘失败");
+  syncPaperAccount(payload.account);
+  renderAll();
+  schedulePositionRefresh();
+  const result = payload.run ? `买入 ${payload.run.bought} / 卖出 ${payload.run.sold}` : "模拟盘已同步";
+  setMessage(result, "ok");
+}
+
 function logoutUser() {
   if (quoteTimer) {
     clearInterval(quoteTimer);
@@ -298,6 +336,9 @@ function logoutUser() {
   }
   currentUser = null;
   authToken = "";
+  paperMode = false;
+  paperSnapshot = null;
+  paperEvents = [];
   localStorage.removeItem(SESSION_KEY);
   localStorage.removeItem(AUTH_TOKEN_KEY);
   positions = {};
@@ -327,15 +368,20 @@ function renderAll() {
   const logged = Boolean(currentUser);
   const isAdmin = logged && currentUser.role === "admin";
   document.getElementById("authState").textContent = logged ? `已登录：${currentUser.username}` : "未登录";
-  document.getElementById("accountTitle").textContent = logged ? `${currentUser.username} 的账户` : "账户数据";
+  document.getElementById("accountTitle").textContent = paperMode ? "test 自动模拟盘" : logged ? `${currentUser.username} 的账户` : "账户数据";
   document.getElementById("accountUserLabel").textContent = logged ? currentUser.username : "请先登录";
   document.getElementById("accountLogoutBtn").disabled = !logged;
   document.getElementById("openPasswordBtn").disabled = true;
   document.getElementById("openPasswordBtn").title = "预置账号暂不支持自助改密";
+  document.getElementById("openMoneyBtn").disabled = !logged || paperMode;
+  document.getElementById("openTradeBtn").disabled = !logged || paperMode;
+  document.getElementById("syncPaperBtn").classList.toggle("hidden", !paperMode);
+  document.getElementById("runPaperBtn").classList.toggle("hidden", !paperMode);
   document.getElementById("accountLoginNote").classList.toggle("hidden", logged);
   document.querySelectorAll(".auth-only").forEach((node) => node.classList.toggle("hidden", !logged));
   document.getElementById("adminSection").classList.toggle("hidden", !isAdmin);
   document.querySelectorAll(".locked").forEach((node) => node.classList.toggle("disabled", !logged));
+  renderPaperStatus();
 
   document.getElementById("initialCapital").value = logged ? Number(account.initialCapital || 0).toFixed(2) : "";
   document.getElementById("cashAmount").value = logged ? Number(account.cash || 0).toFixed(2) : "";
@@ -354,6 +400,26 @@ function renderSummary() {
   document.getElementById("sumAssets").textContent = formatCurrency(summary.assets);
   document.getElementById("sumFloat").textContent = formatCurrency(summary.floating);
   document.getElementById("sumTotalPnl").textContent = formatCurrency(summary.totalPnl);
+}
+
+function renderPaperStatus() {
+  const node = document.getElementById("paperStatusLine");
+  if (!node) return;
+  node.classList.toggle("hidden", !paperMode);
+  if (!paperMode) {
+    node.textContent = "";
+    return;
+  }
+  const summary = paperSnapshot && paperSnapshot.summary ? paperSnapshot.summary : calcSummary();
+  const lastRun = paperSnapshot && paperSnapshot.lastRunAt ? formatDate(paperSnapshot.lastRunAt) : "--";
+  node.innerHTML = `
+    <span>自动模拟</span>
+    <strong>本金 ${formatCurrency(summary.initialCapital || 100000)}</strong>
+    <strong>总盈亏 ${formatCurrency(summary.totalPnl || 0)}</strong>
+    <span>持仓 ${summary.positionCount || positionRows().length}</span>
+    <span>操作 ${summary.tradeCount || trades.length}</span>
+    <span>运行 ${lastRun}</span>
+  `;
 }
 
 function renderPositions() {
@@ -384,11 +450,11 @@ function renderPositions() {
       <div class="position-bottom">
         ${renderInlineSellAdvice(item)}
         <div class="edit-actions">
-          <button class="danger-btn sell-position" type="button">卖出</button>
+          ${paperMode ? "" : `<button class="danger-btn sell-position" type="button">卖出</button>`}
           <button class="secondary-btn sell-detail" type="button">详情</button>
-          <button class="secondary-btn edit-position" type="button">${editingCode === item.code ? "收起" : "编辑"}</button>
-          <button class="secondary-btn save-position" type="button">保存</button>
-          <button class="danger-btn delete-position" type="button">删除</button>
+          ${paperMode ? "" : `<button class="secondary-btn edit-position" type="button">${editingCode === item.code ? "收起" : "编辑"}</button>`}
+          ${paperMode ? "" : `<button class="secondary-btn save-position" type="button">保存</button>`}
+          ${paperMode ? "" : `<button class="danger-btn delete-position" type="button">删除</button>`}
         </div>
       </div>
     </div>
@@ -442,21 +508,35 @@ function openSellDetail(code) {
 
 function renderHistory() {
   const list = document.getElementById("historyList");
-  document.getElementById("tradeCount").textContent = `${trades.length} 条`;
+  const rows = paperMode
+    ? [
+      ...trades.map((item) => ({ ...item, kind: "trade" })),
+      ...paperEvents.map((item) => ({ ...item, kind: "event" }))
+    ].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    : trades.map((item) => ({ ...item, kind: "trade" }));
+  document.getElementById("tradeCount").textContent = `${rows.length} 条`;
   if (!currentUser) {
     list.innerHTML = `<div class="portfolio-empty">登录后查看历史买卖</div>`;
     return;
   }
-  if (!trades.length) {
+  if (!rows.length) {
     list.innerHTML = `<div class="portfolio-empty">暂无历史记录</div>`;
     return;
   }
-  list.innerHTML = trades.slice(0, 80).map((item) => `
+  list.innerHTML = rows.slice(0, 120).map((item) => item.kind === "event" ? `
+    <div class="history-row paper-event-row">
+      <span>${item.type || "事件"}</span>
+      <strong>${item.title || "--"}</strong>
+      <b>${item.meta && item.meta.code ? item.meta.code : "--"}</b>
+      <em>${item.message || "--"}</em>
+      <small>${formatDate(item.createdAt)}</small>
+    </div>
+  ` : `
     <div class="history-row">
       <span class="${item.type === "SELL" ? "down" : "up"}">${item.type === "SELL" ? "卖出" : "买入"}</span>
       <strong>${item.name}</strong>
       <b>${item.code}</b>
-      <em>${Number(item.quantity || 0)}股 @ ${formatCurrency(item.price)}</em>
+      <em>${Number(item.quantity || 0)}股 @ ${formatCurrency(item.price)}${Number.isFinite(Number(item.pnl)) && Number(item.pnl) !== 0 ? ` / 盈亏 ${formatCurrency(item.pnl)}` : ""}</em>
       <small>${formatDate(item.createdAt)}</small>
     </div>
   `).join("");
@@ -500,6 +580,7 @@ async function loadAdminUsers() {
 
 function applyTrade({ type, code, name, quantity, price, note = "账户页手动记录" }) {
   if (!currentUser) throw new Error("请先登录");
+  if (paperMode) throw new Error("test 自动模拟盘不支持手动改仓，请用自动运行");
   const qty = Number(quantity);
   const tradePrice = Number(price);
   if (!String(code || "").trim()) throw new Error("请输入股票代码");
@@ -567,6 +648,7 @@ function applyTrade({ type, code, name, quantity, price, note = "账户页手动
 }
 
 function saveEditedPosition(row) {
+  if (paperMode) throw new Error("test 自动模拟盘不支持手动编辑持仓");
   const code = row.dataset.code;
   const old = positions[code];
   if (!old) return;
@@ -595,6 +677,10 @@ function saveEditedPosition(row) {
 
 async function refreshPositionQuotes() {
   if (!currentUser) return;
+  if (paperMode) {
+    await loadPaperAccount(false);
+    return;
+  }
   const rows = positionRows();
   if (!rows.length) return;
   try {
@@ -670,6 +756,16 @@ document.getElementById("openMoneyBtn").addEventListener("click", () => openModa
 document.getElementById("openTradeBtn").addEventListener("click", () => openModal("tradeModal"));
 document.getElementById("openPasswordBtn").addEventListener("click", () => openModal("passwordModal"));
 document.getElementById("openAdminUserBtn").addEventListener("click", () => openModal("adminUserModal"));
+document.getElementById("syncPaperBtn").addEventListener("click", () => {
+  loadPaperAccount(false).catch((error) => {
+    setMessage(error instanceof Error ? error.message : String(error), "error");
+  });
+});
+document.getElementById("runPaperBtn").addEventListener("click", () => {
+  loadPaperAccount(true).catch((error) => {
+    setMessage(error instanceof Error ? error.message : String(error), "error");
+  });
+});
 
 document.addEventListener("click", (event) => {
   const close = event.target.closest("[data-close]");
@@ -767,9 +863,13 @@ function init() {
   authToken = localStorage.getItem(AUTH_TOKEN_KEY) || "";
   const users = loadProfileCache();
   currentUser = sessionKey && users[sessionKey] ? users[sessionKey] : null;
+  paperMode = currentUser && currentUser.key === "test";
   if (currentUser) loadUserData();
   renderAll();
   schedulePositionRefresh();
+  if (paperMode) loadPaperAccount(false).catch((error) => {
+    setMessage(error instanceof Error ? error.message : String(error), "error");
+  });
   if (currentUser && currentUser.role === "admin") loadAdminUsers();
   if (!currentUser && new URLSearchParams(location.search).has("login")) {
     openModal("loginModal");

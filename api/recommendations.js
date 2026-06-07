@@ -780,4 +780,5 @@ async function handler(req, res) {
 }
 
 handler.marketStatus = marketStatus;
+handler.buildRecommendations = buildRecommendations;
 module.exports = handler;

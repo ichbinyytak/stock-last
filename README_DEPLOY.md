@@ -63,11 +63,28 @@ dist/
 KV_REST_API_URL
 KV_REST_API_TOKEN
 AUTH_SECRET
+CRON_SECRET
 ```
 
 `AUTH_SECRET` 用于签发登录 token，可设置为任意足够长的随机字符串。
+`CRON_SECRET` 用于 Vercel Cron 调用自动模拟盘接口，也建议设置为足够长的随机字符串。
 
-注意：资金、持仓、买卖历史当前仍按用户 ID 保存在浏览器 `localStorage`，只用于学习复盘，不会连接券商或真实下单。下一步如果需要多设备同步，再把账户数据迁到服务器数据库。
+注意：普通账户的资金、持仓、买卖历史当前仍按用户 ID 保存在浏览器 `localStorage`；`test` 自动模拟盘的数据保存在服务器 KV。两者都只用于学习复盘，不会连接券商或真实下单。
+
+## test 自动模拟盘
+
+`test` 账号接入服务端模拟盘，用来观察尾盘买入法的规则效果：
+
+1. 初始模拟资金固定为 `100000.00`。
+2. 账户数据保存在 Vercel KV / Upstash Redis，key 为 `lateDay:paperAccount:test:v1`。
+3. 登录 `test / 123` 后，用户中心会显示服务端模拟资金、持仓、买卖和策略运行事件。
+4. 自动买入任务：交易日北京时间 14:45，对应 Cron `45 6 * * 1-5`。
+5. 自动卖出任务：交易日北京时间 09:35，对应 Cron `35 1 * * 1-5`。
+6. 策略只做模拟记录，不连接券商，不发送真实订单。
+
+Vercel Cron 只在 Production 部署中自动执行。本地或预览环境可以在 `test` 用户中心点击“自动运行”手动触发一次。
+
+如果使用 Vercel Hobby 计划，需要注意 Cron 的触发时间可能不是分钟级精确。代码会在非尾盘/非开盘处理窗口自动跳过，但要严格观察 09:35 和 14:45 的策略效果，建议使用 Vercel Pro 或外部定时服务。
 
 ## 当前结构
 
@@ -77,4 +94,5 @@ AUTH_SECRET
 4. 实时推荐 API：`api/recommendations.js`
 5. 登录 API：`api/auth/login.js`
 6. 用户管理 API：`api/auth/manage-users.js`
-7. 本地开发服务：`scripts/dev-server.js`
+7. 自动模拟盘 API：`api/paper-trading.js`
+8. 本地开发服务：`scripts/dev-server.js`

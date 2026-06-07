@@ -5,6 +5,7 @@ const recommendations = require("../api/recommendations");
 const quotes = require("../api/quotes");
 const authLogin = require("../api/auth/login");
 const authManageUsers = require("../api/auth/manage-users");
+const paperTrading = require("../api/paper-trading");
 
 const root = path.resolve(__dirname, "..", "ui-prototype");
 const port = Number(process.env.PORT || 4173);
@@ -77,6 +78,10 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.url.startsWith("/api/auth/manage-users")) {
     await authManageUsers(req, apiResponse(res));
+    return;
+  }
+  if (req.url.startsWith("/api/paper-trading")) {
+    await paperTrading(req, apiResponse(res));
     return;
   }
   serveFile(req, res);

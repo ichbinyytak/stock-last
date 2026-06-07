@@ -14,5 +14,15 @@
         }
       ]
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/paper-trading?run=1&phase=sell",
+      "schedule": "35 1 * * 1-5"
+    },
+    {
+      "path": "/api/paper-trading?run=1&phase=buy",
+      "schedule": "45 6 * * 1-5"
+    }
   ]
 }
