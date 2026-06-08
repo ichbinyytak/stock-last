@@ -356,6 +356,7 @@ async function loginUser(username, password) {
   cacheUserProfile(user);
   startUserSession(user, payload.token || "");
   setAuthMessage("登录成功", "ok");
+  hideAuthModal();
 }
 
 function logoutUser() {

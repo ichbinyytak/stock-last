@@ -382,6 +382,8 @@ async function loginUser(username, password) {
   cacheUserProfile(user);
   startUserSession(user, payload.token || "");
   setMessage("登录成功", "ok");
+  closeModal("loginModal");
+  document.getElementById("accountPassword").value = "";
 }
 
 async function createManagedUser(username, password) {
