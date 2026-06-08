@@ -125,6 +125,10 @@ function scopedKey(name) {
   return `lateDay.${userScope()}.${name}.v1`;
 }
 
+function strategyKey(name) {
+  return scopedKey(name);
+}
+
 function loadProfileCache() {
   return readJson(PROFILE_CACHE_KEY, {});
 }
@@ -193,6 +197,7 @@ function sellAdvice(position) {
   const quoteChange = Number(position.quoteChange || 0);
   const pnlPct = avg ? ((last - avg) / avg) * 100 : 0;
   const openPct = avg && open ? ((open - avg) / avg) * 100 : pnlPct;
+  const strategy = { ...DEFAULT_OPERATION_STRATEGY, ...paperStrategy };
   const firstPush = Math.max(last * 1.008, avg * 1.015, open ? open * 1.01 : 0);
   const flatLine = Math.max(avg, last * 0.995);
   const riskLine = Math.min(avg * 0.98, last * 0.985);
@@ -211,7 +216,7 @@ function sellAdvice(position) {
       ]
     };
   }
-  if (pnlPct >= 2 || openPct >= 1.5 || quoteChange >= 3) {
+  if (pnlPct >= strategy.strongPnlPct || openPct >= strategy.strongOpenPct || quoteChange >= strategy.strongQuoteChangePct) {
     return {
       tag: "强势兑现",
       text: "开盘或盘中强于成本，第一波冲高优先分批卖出。",
@@ -225,7 +230,7 @@ function sellAdvice(position) {
       ]
     };
   }
-  if (pnlPct >= -1 && openPct >= -1.2) {
+  if (pnlPct >= strategy.flatPnlFloorPct && openPct >= strategy.flatOpenFloorPct) {
     return {
       tag: "平盘确认",
       text: "等开盘10-30分钟，量价不主动则降低仓位。",
@@ -282,6 +287,24 @@ function resetStrategyDefaults() {
   selectionStrategyFields = DEFAULT_SELECTION_FIELDS;
 }
 
+function loadLocalStrategies() {
+  paperStrategy = {
+    ...DEFAULT_OPERATION_STRATEGY,
+    ...readJson(strategyKey("operationStrategy"), {})
+  };
+  selectionStrategy = {
+    ...DEFAULT_SELECTION_STRATEGY,
+    ...readJson(strategyKey("selectionStrategy"), {})
+  };
+  strategyFields = DEFAULT_OPERATION_FIELDS;
+  selectionStrategyFields = DEFAULT_SELECTION_FIELDS;
+}
+
+function saveLocalStrategies() {
+  writeJson(strategyKey("operationStrategy"), paperStrategy);
+  writeJson(strategyKey("selectionStrategy"), selectionStrategy);
+}
+
 function loadUserData() {
   positions = readJson(scopedKey("positions"), {});
   account = readJson(scopedKey("account"), {
@@ -292,7 +315,7 @@ function loadUserData() {
   trades = readJson(scopedKey("trades"), []);
   paperEvents = [];
   paperSnapshot = null;
-  resetStrategyDefaults();
+  loadLocalStrategies();
 }
 
 function savePositions() {
@@ -391,6 +414,7 @@ function syncPaperAccount(snapshot) {
   strategyFields = Array.isArray(snapshot.strategyFields) && snapshot.strategyFields.length ? snapshot.strategyFields : DEFAULT_OPERATION_FIELDS;
   selectionStrategy = { ...DEFAULT_SELECTION_STRATEGY, ...(snapshot.selectionStrategy || {}) };
   selectionStrategyFields = Array.isArray(snapshot.selectionStrategyFields) && snapshot.selectionStrategyFields.length ? snapshot.selectionStrategyFields : DEFAULT_SELECTION_FIELDS;
+  saveLocalStrategies();
 }
 
 async function loadPaperAccount(run = false, reschedule = true) {
@@ -410,7 +434,14 @@ async function loadPaperAccount(run = false, reschedule = true) {
 }
 
 async function savePaperStrategy(strategy) {
-  if (!currentUser || !paperMode) throw new Error("只有 test 自动模拟盘可以调整策略");
+  if (!currentUser) throw new Error("请先登录");
+  paperStrategy = { ...DEFAULT_OPERATION_STRATEGY, ...strategy };
+  saveLocalStrategies();
+  if (!paperMode) {
+    renderAll();
+    setMessage("操作策略参数已保存", "ok");
+    return;
+  }
   const response = await fetch("/api/paper-trading", {
     method: "PUT",
     headers: {
@@ -427,7 +458,14 @@ async function savePaperStrategy(strategy) {
 }
 
 async function saveSelectionStrategy(nextSelectionStrategy) {
-  if (!currentUser || !paperMode) throw new Error("只有 test 自动模拟盘可以调整选股策略");
+  if (!currentUser) throw new Error("请先登录");
+  selectionStrategy = { ...DEFAULT_SELECTION_STRATEGY, ...nextSelectionStrategy };
+  saveLocalStrategies();
+  if (!paperMode) {
+    renderAll();
+    setMessage("选股策略参数已保存，回到看板刷新后生效", "ok");
+    return;
+  }
   const response = await fetch("/api/paper-trading", {
     method: "PUT",
     headers: {
@@ -492,8 +530,8 @@ function renderAll() {
   document.getElementById("openTradeBtn").disabled = !logged || paperMode;
   document.getElementById("syncPaperBtn").classList.toggle("hidden", !paperMode);
   document.getElementById("runPaperBtn").classList.toggle("hidden", !paperMode);
-  document.getElementById("paperStrategySection").classList.toggle("hidden", !paperMode);
-  document.getElementById("selectionStrategySection").classList.toggle("hidden", !paperMode);
+  document.getElementById("paperStrategySection").classList.toggle("hidden", !logged);
+  document.getElementById("selectionStrategySection").classList.toggle("hidden", !logged);
   document.getElementById("accountLoginNote").classList.toggle("hidden", logged);
   document.querySelectorAll(".auth-only").forEach((node) => node.classList.toggle("hidden", !logged));
   document.getElementById("adminSection").classList.toggle("hidden", !isAdmin);
@@ -544,7 +582,7 @@ function renderPaperStatus() {
 function renderStrategyPanel() {
   const list = document.getElementById("strategyList");
   if (!list) return;
-  if (!paperMode) {
+  if (!currentUser) {
     list.innerHTML = "";
     return;
   }
@@ -571,7 +609,7 @@ function renderStrategyPanel() {
 function renderSelectionStrategyPanel() {
   const list = document.getElementById("selectionStrategyList");
   if (!list) return;
-  if (!paperMode) {
+  if (!currentUser) {
     list.innerHTML = "";
     return;
   }

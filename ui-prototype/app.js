@@ -4,6 +4,21 @@ const SESSION_KEY = "lateDay.session.v1";
 const AUTH_TOKEN_KEY = "lateDay.authToken.v1";
 const GUEST_ID = "guest";
 const SCHEDULE_CHECK_MS = 60 * 1000;
+const DEFAULT_SELECTION_STRATEGY = {
+  minStockChangePct: 3,
+  maxStockChangePct: 18.8,
+  minTurnoverPct: 2,
+  maxTurnoverPct: 25,
+  minVolumeRatio: 1,
+  minBoardScore: 78,
+  minStockScore: 76,
+  minBoardBreadthPct: 45,
+  minActiveStocks: 3,
+  requireBullTrend: true,
+  avoidNearLimit: true,
+  preferElastic20cm: true,
+  strictLateWindow: false
+};
 
 let boards = [];
 let selected = {
@@ -18,7 +33,7 @@ let strategySummary = null;
 let isLoading = false;
 let currentUser = null;
 let authToken = "";
-let selectionStrategy = {};
+let selectionStrategy = { ...DEFAULT_SELECTION_STRATEGY };
 let favorites = new Set();
 let positions = {};
 let buyTarget = null;
@@ -110,6 +125,13 @@ function appendTrade(trade) {
     ...trade
   });
   writeJson(scopedKey("trades"), trades.slice(0, 300));
+}
+
+function loadLocalSelectionStrategy() {
+  selectionStrategy = {
+    ...DEFAULT_SELECTION_STRATEGY,
+    ...readJson(scopedKey("selectionStrategy"), {})
+  };
 }
 
 function formatCurrency(value) {
@@ -230,6 +252,7 @@ function startUserSession(user, token = authToken) {
   localStorage.setItem(SESSION_KEY, user.key);
   if (authToken) localStorage.setItem(AUTH_TOKEN_KEY, authToken);
   loadUserState();
+  loadLocalSelectionStrategy();
   ensureSelection();
   updateAuthUi();
   renderBoards();
@@ -338,7 +361,7 @@ async function loginUser(username, password) {
 function logoutUser() {
   currentUser = null;
   authToken = "";
-  selectionStrategy = {};
+  selectionStrategy = { ...DEFAULT_SELECTION_STRATEGY };
   localStorage.removeItem(SESSION_KEY);
   localStorage.removeItem(AUTH_TOKEN_KEY);
   loadUserState();
@@ -359,8 +382,12 @@ function initAuth() {
 }
 
 async function loadPaperSelectionStrategy() {
-  if (!currentUser || currentUser.key !== "test" || !authToken) {
-    selectionStrategy = {};
+  if (!currentUser) {
+    selectionStrategy = { ...DEFAULT_SELECTION_STRATEGY };
+    return;
+  }
+  loadLocalSelectionStrategy();
+  if (currentUser.key !== "test" || !authToken) {
     return;
   }
   try {
@@ -370,9 +397,12 @@ async function loadPaperSelectionStrategy() {
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "选股策略读取失败");
-    selectionStrategy = payload.account && payload.account.selectionStrategy ? payload.account.selectionStrategy : {};
+    selectionStrategy = {
+      ...selectionStrategy,
+      ...(payload.account && payload.account.selectionStrategy ? payload.account.selectionStrategy : {})
+    };
   } catch {
-    selectionStrategy = {};
+    loadLocalSelectionStrategy();
   }
 }
 
