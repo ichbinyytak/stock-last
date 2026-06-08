@@ -4,6 +4,7 @@ const SESSION_KEY = "lateDay.session.v1";
 const AUTH_TOKEN_KEY = "lateDay.authToken.v1";
 const GUEST_ID = "guest";
 const SCHEDULE_CHECK_MS = 60 * 1000;
+const SELECTION_STRATEGY_VERSION = 2;
 const DEFAULT_SELECTION_STRATEGY = {
   minStockChangePct: 3,
   maxStockChangePct: 18.8,
@@ -14,7 +15,7 @@ const DEFAULT_SELECTION_STRATEGY = {
   minStockScore: 76,
   minBoardBreadthPct: 45,
   minActiveStocks: 3,
-  requireBullTrend: true,
+  requireBullTrend: false,
   avoidNearLimit: true,
   preferElastic20cm: true,
   strictLateWindow: false
@@ -128,9 +129,16 @@ function appendTrade(trade) {
 }
 
 function loadLocalSelectionStrategy() {
+  const stored = readJson(scopedKey("selectionStrategy"), {});
+  const storedVersion = Number(readJson(scopedKey("selectionStrategyVersion"), 0)) || 0;
+  if (!storedVersion && stored.requireBullTrend === true) {
+    stored.requireBullTrend = DEFAULT_SELECTION_STRATEGY.requireBullTrend;
+    writeJson(scopedKey("selectionStrategy"), stored);
+    writeJson(scopedKey("selectionStrategyVersion"), SELECTION_STRATEGY_VERSION);
+  }
   selectionStrategy = {
     ...DEFAULT_SELECTION_STRATEGY,
-    ...readJson(scopedKey("selectionStrategy"), {})
+    ...stored
   };
 }
 
@@ -380,9 +388,13 @@ async function loadPaperSelectionStrategy() {
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "选股策略读取失败");
+    const serverStrategy = payload.account && payload.account.selectionStrategy ? payload.account.selectionStrategy : {};
+    if (!Number(payload.account && payload.account.selectionStrategyVersion) && serverStrategy.requireBullTrend === true) {
+      serverStrategy.requireBullTrend = DEFAULT_SELECTION_STRATEGY.requireBullTrend;
+    }
     selectionStrategy = {
       ...selectionStrategy,
-      ...(payload.account && payload.account.selectionStrategy ? payload.account.selectionStrategy : {})
+      ...serverStrategy
     };
   } catch {
     loadLocalSelectionStrategy();

@@ -44,11 +44,12 @@ const DEFAULT_SELECTION_STRATEGY = {
   minStockScore: 76,
   minBoardBreadthPct: 45,
   minActiveStocks: 3,
-  requireBullTrend: true,
+  requireBullTrend: false,
   avoidNearLimit: true,
   preferElastic20cm: true,
   strictLateWindow: false
 };
+const SELECTION_STRATEGY_VERSION = 2;
 
 const SELECTION_STRATEGY_FIELDS = [
   { key: "minStockChangePct", label: "最低涨幅", type: "number", min: 0, max: 12, step: 0.1, unit: "%", detail: "看板选股的当日涨幅下限。常见尾盘买入法会要求个股有主动性，默认 3%。" },
@@ -60,7 +61,7 @@ const SELECTION_STRATEGY_FIELDS = [
   { key: "minStockScore", label: "个股评分", type: "integer", min: 50, max: 96, step: 1, unit: "分", detail: "看板展示的最低个股评分。提高后偏强势前排，降低后包含更多跟随承接票。" },
   { key: "minBoardBreadthPct", label: "上涨广度", type: "integer", min: 0, max: 90, step: 1, unit: "%", detail: "板块上涨家数占比下限。用于确认板块不是单点拉升，默认 45%。" },
   { key: "minActiveStocks", label: "活跃家数", type: "integer", min: 0, max: 20, step: 1, unit: "只", detail: "板块中涨幅 5% 以上股票的最低数量。默认 3，只显示更有扩散的板块。" },
-  { key: "requireBullTrend", label: "日线多头", type: "boolean", unit: "", detail: "开启后看板只显示日线多头排列候选。适合更稳的尾盘承接打法。" },
+  { key: "requireBullTrend", label: "日线多头", type: "boolean", unit: "", detail: "开启后看板只显示日线多头排列候选。默认关闭，避免盘前或日线源不稳定时把候选全部筛空。" },
   { key: "avoidNearLimit", label: "避开近涨停", type: "boolean", unit: "", detail: "开启后涨停和近涨停只作板块锚点，不作为尾盘买点。默认开启。" },
   { key: "preferElastic20cm", label: "偏好20cm", type: "boolean", unit: "", detail: "开启后 20cm/30cm 弹性票评分略占优。关闭后 10cm 助攻和普通承接票权重更平均。" },
   { key: "strictLateWindow", label: "仅尾盘候选", type: "boolean", unit: "", detail: "开启后只有 14:30 后尾盘窗口才显示买点候选，其它时间主要用于复盘和跟踪。" }
@@ -105,6 +106,7 @@ function fieldsWithDefaults(fields, defaults) {
 module.exports = {
   DEFAULT_OPERATION_STRATEGY,
   DEFAULT_SELECTION_STRATEGY,
+  SELECTION_STRATEGY_VERSION,
   OPERATION_STRATEGY_FIELDS,
   SELECTION_STRATEGY_FIELDS,
   fieldsWithDefaults,

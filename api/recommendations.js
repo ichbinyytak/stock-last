@@ -681,6 +681,59 @@ function mapStock(row, board, market, trend = dailyTrendUnknown(), strategy = no
   };
 }
 
+async function scoreBoardItem(item, index, market, selectionStrategy) {
+  const metrics = boardMetrics(item.board, item.rows);
+  if (item.score < selectionStrategy.minBoardScore) return null;
+  if (Math.round(metrics.breadth * 100) < selectionStrategy.minBoardBreadthPct) return null;
+  if (metrics.active < selectionStrategy.minActiveStocks) return null;
+  const front20 = metrics.front20;
+  const support10 = metrics.support10;
+  const risk = boardRisk(item.board, front20, support10);
+  const anchors = item.rows
+    .filter((row) => isTradableStock(row) && isNearLimit(row))
+    .slice(0, 3)
+    .map((row) => `${row.f14}${number(row.f3, 0).toFixed(1)}%`);
+  const board = {
+    id: String(item.board.f12),
+    code: String(item.board.f12),
+    rank: index + 1,
+    name: item.board.f14 || "--",
+    theme: anchors.length ? `锚点 ${anchors.join(" / ")}` : `领涨 ${item.board.f128 || "待确认"}`,
+    change: number(item.board.f3, 0),
+    score: item.score,
+    front20,
+    support10,
+    risk,
+    window: market.buyWindow || "复盘",
+    action: boardDecision(item.score, risk, metrics, market),
+    confidence: Math.max(45, Math.min(94, Math.round(item.score - (risk === "高" ? 12 : risk === "中" ? 5 : 0)))),
+    reasons: boardReasons(item.board, metrics),
+    warnings: boardWarnings(item.board, metrics),
+    metrics: {
+      up: metrics.up,
+      down: metrics.down,
+      breadth: Math.round(metrics.breadth * 100),
+      active: metrics.active,
+      sealed20: metrics.sealed20,
+      sealed10: metrics.sealed10
+    }
+  };
+  const candidateRows = item.rows
+    .filter((row) => isLateDayCandidate(row, selectionStrategy))
+    .sort((a, b) => pct(b) - pct(a))
+    .slice(0, 12);
+  const trends = await Promise.all(candidateRows.map((row) => fetchDailyTrend(row.f12)));
+  const stocks = candidateRows
+    .map((row, rowIndex) => mapStock(row, board, market, trends[rowIndex], selectionStrategy))
+    .filter((stock) => stock.score >= selectionStrategy.minStockScore)
+    .filter((stock) => !selectionStrategy.requireBullTrend || stock.trend && stock.trend.bullish)
+    .filter((stock) => !selectionStrategy.strictLateWindow || market.mode === "late-day" || stock.action === "尾盘候选")
+    .sort((a, b) => b.score - a.score || Number(b.trend.bullish) - Number(a.trend.bullish) || b.change - a.change)
+    .slice(0, 5);
+  if (!stocks.length) return null;
+  return { ...board, stocks };
+}
+
 async function buildRecommendations(selectionInput = {}) {
   const selectionStrategy = normalizeSelectionStrategy(selectionInput);
   const fastest = await chooseHost();
@@ -704,61 +757,11 @@ async function buildRecommendations(selectionInput = {}) {
     })
   );
 
-  const scoredRows = await Promise.all(normalizeScores(enriched)
+  const topItems = normalizeScores(enriched)
     .sort((a, b) => b.score - a.score)
-    .slice(0, 8)
-    .map(async (item, index) => {
-      const metrics = boardMetrics(item.board, item.rows);
-      if (item.score < selectionStrategy.minBoardScore) return null;
-      if (Math.round(metrics.breadth * 100) < selectionStrategy.minBoardBreadthPct) return null;
-      if (metrics.active < selectionStrategy.minActiveStocks) return null;
-      const front20 = metrics.front20;
-      const support10 = metrics.support10;
-      const risk = boardRisk(item.board, front20, support10);
-      const anchors = item.rows
-        .filter((row) => isTradableStock(row) && isNearLimit(row))
-        .slice(0, 3)
-        .map((row) => `${row.f14}${number(row.f3, 0).toFixed(1)}%`);
-      const board = {
-        id: String(item.board.f12),
-        code: String(item.board.f12),
-        rank: index + 1,
-        name: item.board.f14 || "--",
-        theme: anchors.length ? `锚点 ${anchors.join(" / ")}` : `领涨 ${item.board.f128 || "待确认"}`,
-        change: number(item.board.f3, 0),
-        score: item.score,
-        front20,
-        support10,
-        risk,
-        window: market.buyWindow || "复盘",
-        action: boardDecision(item.score, risk, metrics, market),
-        confidence: Math.max(45, Math.min(94, Math.round(item.score - (risk === "高" ? 12 : risk === "中" ? 5 : 0)))),
-        reasons: boardReasons(item.board, metrics),
-        warnings: boardWarnings(item.board, metrics),
-        metrics: {
-          up: metrics.up,
-          down: metrics.down,
-          breadth: Math.round(metrics.breadth * 100),
-          active: metrics.active,
-          sealed20: metrics.sealed20,
-          sealed10: metrics.sealed10
-        }
-      };
-      const candidateRows = item.rows
-        .filter((row) => isLateDayCandidate(row, selectionStrategy))
-        .sort((a, b) => pct(b) - pct(a))
-        .slice(0, 12);
-      const trends = await Promise.all(candidateRows.map((row) => fetchDailyTrend(row.f12)));
-      const stocks = candidateRows
-        .map((row, rowIndex) => mapStock(row, board, market, trends[rowIndex], selectionStrategy))
-        .filter((stock) => stock.score >= selectionStrategy.minStockScore)
-        .filter((stock) => !selectionStrategy.requireBullTrend || stock.trend && stock.trend.bullish)
-        .filter((stock) => !selectionStrategy.strictLateWindow || market.mode === "late-day" || stock.action === "尾盘候选")
-        .sort((a, b) => b.score - a.score || Number(b.trend.bullish) - Number(a.trend.bullish) || b.change - a.change)
-        .slice(0, 5);
-      if (!stocks.length) return null;
-      return { ...board, stocks };
-    }));
+    .slice(0, 8);
+
+  const scoredRows = await Promise.all(topItems.map((item, index) => scoreBoardItem(item, index, market, selectionStrategy)));
   const scored = scoredRows
     .filter(Boolean)
     .slice(0, 3)

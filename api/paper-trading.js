@@ -7,6 +7,7 @@ const {
   SELECTION_STRATEGY_FIELDS,
   DEFAULT_OPERATION_STRATEGY,
   DEFAULT_SELECTION_STRATEGY,
+  SELECTION_STRATEGY_VERSION,
   normalizeOperationStrategy,
   normalizeSelectionStrategy
 } = require("./strategy-config");
@@ -108,6 +109,7 @@ function createAccount() {
     cash: INITIAL_CAPITAL,
     strategy: { ...DEFAULT_OPERATION_STRATEGY },
     selectionStrategy: { ...DEFAULT_SELECTION_STRATEGY },
+    selectionStrategyVersion: SELECTION_STRATEGY_VERSION,
     positions: {},
     trades: [],
     events: [{
@@ -156,12 +158,18 @@ async function loadAccount() {
 }
 
 function normalizeAccount(account) {
+  const selectionStrategy = normalizeSelectionStrategy(account && account.selectionStrategy);
+  const selectionStrategyVersion = Number(account && account.selectionStrategyVersion) || 0;
+  if (!selectionStrategyVersion && account && account.selectionStrategy && account.selectionStrategy.requireBullTrend === true) {
+    selectionStrategy.requireBullTrend = DEFAULT_SELECTION_STRATEGY.requireBullTrend;
+  }
   return {
     ...createAccount(),
     ...account,
     initialCapital: INITIAL_CAPITAL,
     strategy: normalizeOperationStrategy(account && account.strategy),
-    selectionStrategy: normalizeSelectionStrategy(account && account.selectionStrategy),
+    selectionStrategy,
+    selectionStrategyVersion: SELECTION_STRATEGY_VERSION,
     positions: account && account.positions && typeof account.positions === "object" ? account.positions : {},
     trades: Array.isArray(account && account.trades) ? account.trades : [],
     events: Array.isArray(account && account.events) ? account.events : []
@@ -401,8 +409,10 @@ function summary(account) {
 function publicAccount(account) {
   return {
     ...account,
+    storageConfigured: kvConfigured(),
     strategy: normalizeOperationStrategy(account.strategy),
     selectionStrategy: normalizeSelectionStrategy(account.selectionStrategy),
+    selectionStrategyVersion: account.selectionStrategyVersion || SELECTION_STRATEGY_VERSION,
     strategyFields: fieldsWithDefaults(OPERATION_STRATEGY_FIELDS, DEFAULT_OPERATION_STRATEGY),
     selectionStrategyFields: fieldsWithDefaults(SELECTION_STRATEGY_FIELDS, DEFAULT_SELECTION_STRATEGY),
     summary: summary(account)
@@ -429,16 +439,16 @@ async function handler(req, res) {
     const account = await loadAccount();
     let run = null;
     if (req.method === "PUT") {
-      if (!kvConfigured()) throw new Error("未配置服务器模拟盘存储，请在 Vercel 配置 KV_REST_API_URL 和 KV_REST_API_TOKEN");
       const body = JSON.parse(await readBody(req) || "{}");
       account.strategy = normalizeOperationStrategy(body.strategy || account.strategy);
       account.selectionStrategy = normalizeSelectionStrategy(body.selectionStrategy || account.selectionStrategy);
+      account.selectionStrategyVersion = SELECTION_STRATEGY_VERSION;
       account.updatedAt = nowIso();
       recordEvent(account, "STRATEGY", "策略参数已更新", "test 自动模拟盘的操作策略和选股策略参数已保存到服务器。", {
         strategy: account.strategy,
         selectionStrategy: account.selectionStrategy
       });
-      await writeStoredAccount(account);
+      if (kvConfigured()) await writeStoredAccount(account);
     } else if (url.searchParams.get("run") === "1" || req.method === "POST") {
       if (!kvConfigured()) throw new Error("未配置服务器模拟盘存储，请在 Vercel 配置 KV_REST_API_URL 和 KV_REST_API_TOKEN");
       const phase = url.searchParams.get("phase") || "auto";

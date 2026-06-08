@@ -3,6 +3,7 @@ const SESSION_KEY = "lateDay.session.v1";
 const AUTH_TOKEN_KEY = "lateDay.authToken.v1";
 const GUEST_ID = "guest";
 const SCHEDULE_CHECK_MS = 60 * 1000;
+const SELECTION_STRATEGY_VERSION = 2;
 const DEFAULT_OPERATION_STRATEGY = {
   maxPositions: 3,
   maxPositionPct: 30,
@@ -30,7 +31,7 @@ const DEFAULT_SELECTION_STRATEGY = {
   minStockScore: 76,
   minBoardBreadthPct: 45,
   minActiveStocks: 3,
-  requireBullTrend: true,
+  requireBullTrend: false,
   avoidNearLimit: true,
   preferElastic20cm: true,
   strictLateWindow: false
@@ -62,7 +63,7 @@ const DEFAULT_SELECTION_FIELDS = [
   { key: "minStockScore", label: "个股评分", type: "integer", min: 50, max: 96, step: 1, unit: "分", detail: "看板展示的最低个股评分。" },
   { key: "minBoardBreadthPct", label: "上涨广度", type: "integer", min: 0, max: 90, step: 1, unit: "%", detail: "板块上涨家数占比下限。" },
   { key: "minActiveStocks", label: "活跃家数", type: "integer", min: 0, max: 20, step: 1, unit: "只", detail: "板块中涨幅 5% 以上股票的最低数量。" },
-  { key: "requireBullTrend", label: "日线多头", type: "boolean", unit: "", detail: "开启后看板只显示日线多头排列候选。" },
+  { key: "requireBullTrend", label: "日线多头", type: "boolean", unit: "", detail: "开启后看板只显示日线多头排列候选。默认关闭，避免候选被全部筛空。" },
   { key: "avoidNearLimit", label: "避开近涨停", type: "boolean", unit: "", detail: "开启后涨停和近涨停只作板块锚点。" },
   { key: "preferElastic20cm", label: "偏好20cm", type: "boolean", unit: "", detail: "开启后 20cm/30cm 弹性票评分略占优。" },
   { key: "strictLateWindow", label: "仅尾盘候选", type: "boolean", unit: "", detail: "开启后只有尾盘窗口才显示买点候选。" }
@@ -287,6 +288,17 @@ function resetStrategyDefaults() {
   selectionStrategyFields = DEFAULT_SELECTION_FIELDS;
 }
 
+function migrateStoredSelectionStrategy(stored) {
+  const next = stored && typeof stored === "object" ? { ...stored } : {};
+  const storedVersion = Number(readJson(strategyKey("selectionStrategyVersion"), 0)) || 0;
+  if (!storedVersion && next.requireBullTrend === true) {
+    next.requireBullTrend = DEFAULT_SELECTION_STRATEGY.requireBullTrend;
+    writeJson(strategyKey("selectionStrategy"), next);
+  }
+  writeJson(strategyKey("selectionStrategyVersion"), SELECTION_STRATEGY_VERSION);
+  return next;
+}
+
 function loadLocalStrategies() {
   paperStrategy = {
     ...DEFAULT_OPERATION_STRATEGY,
@@ -294,7 +306,7 @@ function loadLocalStrategies() {
   };
   selectionStrategy = {
     ...DEFAULT_SELECTION_STRATEGY,
-    ...readJson(strategyKey("selectionStrategy"), {})
+    ...migrateStoredSelectionStrategy(readJson(strategyKey("selectionStrategy"), {}))
   };
   strategyFields = DEFAULT_OPERATION_FIELDS;
   selectionStrategyFields = DEFAULT_SELECTION_FIELDS;
@@ -303,6 +315,7 @@ function loadLocalStrategies() {
 function saveLocalStrategies() {
   writeJson(strategyKey("operationStrategy"), paperStrategy);
   writeJson(strategyKey("selectionStrategy"), selectionStrategy);
+  writeJson(strategyKey("selectionStrategyVersion"), SELECTION_STRATEGY_VERSION);
 }
 
 function loadUserData() {
@@ -404,6 +417,9 @@ async function createManagedUser(username, password) {
 function syncPaperAccount(snapshot) {
   paperSnapshot = snapshot;
   const summary = snapshot.summary || {};
+  const useServerStrategies = snapshot.storageConfigured === true;
+  const localOperationStrategy = readJson(strategyKey("operationStrategy"), {});
+  const localSelectionStrategy = migrateStoredSelectionStrategy(readJson(strategyKey("selectionStrategy"), {}));
   account = {
     initialCapital: Number(summary.initialCapital || snapshot.initialCapital || 100000),
     cash: Number(summary.cash || snapshot.cash || 0),
@@ -412,9 +428,18 @@ function syncPaperAccount(snapshot) {
   positions = snapshot.positions || {};
   trades = Array.isArray(snapshot.trades) ? snapshot.trades : [];
   paperEvents = Array.isArray(snapshot.events) ? snapshot.events : [];
-  paperStrategy = { ...DEFAULT_OPERATION_STRATEGY, ...(snapshot.strategy || {}) };
+  paperStrategy = {
+    ...DEFAULT_OPERATION_STRATEGY,
+    ...(useServerStrategies ? snapshot.strategy || {} : localOperationStrategy)
+  };
   strategyFields = Array.isArray(snapshot.strategyFields) && snapshot.strategyFields.length ? snapshot.strategyFields : DEFAULT_OPERATION_FIELDS;
-  selectionStrategy = { ...DEFAULT_SELECTION_STRATEGY, ...(snapshot.selectionStrategy || {}) };
+  const snapshotSelectionStrategy = {
+    ...(useServerStrategies ? snapshot.selectionStrategy || {} : localSelectionStrategy)
+  };
+  if (useServerStrategies && !Number(snapshot.selectionStrategyVersion) && snapshotSelectionStrategy.requireBullTrend === true) {
+    snapshotSelectionStrategy.requireBullTrend = DEFAULT_SELECTION_STRATEGY.requireBullTrend;
+  }
+  selectionStrategy = { ...DEFAULT_SELECTION_STRATEGY, ...snapshotSelectionStrategy };
   selectionStrategyFields = Array.isArray(snapshot.selectionStrategyFields) && snapshot.selectionStrategyFields.length ? snapshot.selectionStrategyFields : DEFAULT_SELECTION_FIELDS;
   saveLocalStrategies();
 }
@@ -453,7 +478,14 @@ async function savePaperStrategy(strategy) {
     body: JSON.stringify({ strategy })
   });
   const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || "保存策略失败");
+  if (!response.ok) {
+    if (String(payload.error || "").includes("未配置服务器模拟盘存储")) {
+      renderAll();
+      setMessage("操作策略参数已保存到本地", "ok");
+      return;
+    }
+    throw new Error(payload.error || "保存策略失败");
+  }
   syncPaperAccount(payload.account);
   renderAll();
   setMessage("操作策略参数已保存", "ok");
@@ -477,7 +509,14 @@ async function saveSelectionStrategy(nextSelectionStrategy) {
     body: JSON.stringify({ selectionStrategy: nextSelectionStrategy })
   });
   const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || "保存选股策略失败");
+  if (!response.ok) {
+    if (String(payload.error || "").includes("未配置服务器模拟盘存储")) {
+      renderAll();
+      setMessage("选股策略参数已保存到本地，回到看板刷新后生效", "ok");
+      return;
+    }
+    throw new Error(payload.error || "保存选股策略失败");
+  }
   syncPaperAccount(payload.account);
   renderAll();
   setMessage("选股策略参数已保存，回到看板刷新后生效", "ok");
