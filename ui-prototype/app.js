@@ -163,31 +163,16 @@ function toggleFavorite(code) {
   renderBoards();
 }
 
-function setAuthMessage(message, type = "") {
-  const node = document.getElementById("authMessage");
-  if (!node) return;
-  node.textContent = message || "";
-  node.className = `auth-message ${type}`;
-}
-
 function showAuthModal() {
   window.location.href = "./account.html?login=1";
-}
-
-function hideAuthModal() {
-  setAuthMessage("");
 }
 
 function updateAuthUi() {
   const label = document.getElementById("authLabel");
   const accountLink = document.getElementById("accountLink");
-  const title = document.getElementById("authTitle");
-  const subtitle = document.getElementById("authSubtitle");
   const logoutBtn = document.getElementById("logoutBtn");
   if (label) label.textContent = currentUser ? currentUser.username.slice(0, 6) : "登录";
   if (accountLink) accountLink.textContent = currentUser ? currentUser.username.slice(0, 6) : "账户";
-  if (title) title.textContent = currentUser ? "用户中心" : "用户登录";
-  if (subtitle) subtitle.textContent = currentUser ? "自选和看板状态已按账号隔离" : "主页公开浏览，登录后记录买入和自选";
   if (logoutBtn) logoutBtn.classList.toggle("hidden", !currentUser);
   renderPortfolio();
 }
@@ -355,8 +340,6 @@ async function loginUser(username, password) {
   if (!user) throw new Error("登录接口未返回用户信息");
   cacheUserProfile(user);
   startUserSession(user, payload.token || "");
-  setAuthMessage("登录成功", "ok");
-  hideAuthModal();
 }
 
 function logoutUser() {
@@ -370,7 +353,6 @@ function logoutUser() {
   updateAuthUi();
   renderBoards();
   loadRecommendations({ force: true });
-  setAuthMessage("已退出，当前使用访客数据", "ok");
 }
 
 function initAuth() {
@@ -806,24 +788,6 @@ document.getElementById("refreshBtn").addEventListener("click", () => {
 
 const authBtn = document.getElementById("authBtn");
 if (authBtn) authBtn.addEventListener("click", showAuthModal);
-const authClose = document.getElementById("authClose");
-if (authClose) authClose.addEventListener("click", hideAuthModal);
-const authModal = document.getElementById("authModal");
-if (authModal) authModal.addEventListener("click", (event) => {
-  if (event.target.id === "authModal") hideAuthModal();
-});
-
-const authForm = document.getElementById("authForm");
-if (authForm) authForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const username = document.getElementById("authUsername").value;
-  const password = document.getElementById("authPassword").value;
-  try {
-    await loginUser(username, password);
-  } catch (error) {
-    setAuthMessage(error instanceof Error ? error.message : String(error), "error");
-  }
-});
 
 const logoutBtn = document.getElementById("logoutBtn");
 if (logoutBtn) logoutBtn.addEventListener("click", logoutUser);

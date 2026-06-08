@@ -414,6 +414,7 @@ function canAccess(req, url) {
   if (user && (user.key === "test" || user.role === "admin")) return true;
   const cronSecret = process.env.CRON_SECRET;
   const auth = req.headers.authorization || "";
+  if (url.searchParams.get("run") === "1" && req.headers["x-vercel-cron"]) return true;
   if (url.searchParams.get("run") === "1" && cronSecret && auth === `Bearer ${cronSecret}`) return true;
   return false;
 }
