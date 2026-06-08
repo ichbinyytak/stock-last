@@ -46,10 +46,13 @@ const DEFAULT_SELECTION_STRATEGY = {
   minActiveStocks: 3,
   requireBullTrend: false,
   avoidNearLimit: true,
+  requirePreviousDayPattern: true,
+  avoidPreviousLimitMove: true,
+  maxPreviousBullBodyPct: 5,
   preferElastic20cm: true,
   strictLateWindow: false
 };
-const SELECTION_STRATEGY_VERSION = 2;
+const SELECTION_STRATEGY_VERSION = 3;
 
 const SELECTION_STRATEGY_FIELDS = [
   { key: "minStockChangePct", label: "最低涨幅", type: "number", min: 0, max: 12, step: 0.1, unit: "%", detail: "看板选股的当日涨幅下限。常见尾盘买入法会要求个股有主动性，默认 3%。" },
@@ -63,6 +66,9 @@ const SELECTION_STRATEGY_FIELDS = [
   { key: "minActiveStocks", label: "活跃家数", type: "integer", min: 0, max: 20, step: 1, unit: "只", detail: "板块中涨幅 5% 以上股票的最低数量。默认 3，只显示更有扩散的板块。" },
   { key: "requireBullTrend", label: "日线多头", type: "boolean", unit: "", detail: "开启后看板只显示日线多头排列候选。默认关闭，避免盘前或日线源不稳定时把候选全部筛空。" },
   { key: "avoidNearLimit", label: "避开近涨停", type: "boolean", unit: "", detail: "开启后涨停和近涨停只作板块锚点，不作为尾盘买点。默认开启。" },
+  { key: "requirePreviousDayPattern", label: "前日K线", type: "boolean", unit: "", detail: "开启后要求候选股前一交易日通过K线过滤。默认开启，用于避开前日极端涨跌和过大阳线后的次日追高。" },
+  { key: "avoidPreviousLimitMove", label: "前日涨跌停", type: "boolean", unit: "", detail: "开启后过滤前一交易日涨停或跌停的个股。默认开启。" },
+  { key: "maxPreviousBullBodyPct", label: "前日阳线实体", type: "number", min: 0, max: 20, step: 0.1, unit: "%", detail: "前一交易日如果是阳线，实体涨幅不能超过该值。默认 5%。" },
   { key: "preferElastic20cm", label: "偏好20cm", type: "boolean", unit: "", detail: "开启后 20cm/30cm 弹性票评分略占优。关闭后 10cm 助攻和普通承接票权重更平均。" },
   { key: "strictLateWindow", label: "仅尾盘候选", type: "boolean", unit: "", detail: "开启后只有 14:30 后尾盘窗口才显示买点候选，其它时间主要用于复盘和跟踪。" }
 ];

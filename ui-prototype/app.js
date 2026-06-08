@@ -4,7 +4,7 @@ const SESSION_KEY = "lateDay.session.v1";
 const AUTH_TOKEN_KEY = "lateDay.authToken.v1";
 const GUEST_ID = "guest";
 const SCHEDULE_CHECK_MS = 60 * 1000;
-const SELECTION_STRATEGY_VERSION = 2;
+const SELECTION_STRATEGY_VERSION = 3;
 const DEFAULT_SELECTION_STRATEGY = {
   minStockChangePct: 3,
   maxStockChangePct: 18.8,
@@ -17,6 +17,9 @@ const DEFAULT_SELECTION_STRATEGY = {
   minActiveStocks: 3,
   requireBullTrend: false,
   avoidNearLimit: true,
+  requirePreviousDayPattern: true,
+  avoidPreviousLimitMove: true,
+  maxPreviousBullBodyPct: 5,
   preferElastic20cm: true,
   strictLateWindow: false
 };

@@ -178,7 +178,7 @@ function stockSecid(code) {
   return `${value.startsWith("6") ? "1" : "0"}.${value}`;
 }
 
-async function fetchDailyTrend(code, timeoutMs = 3500) {
+async function fetchDailyTrend(code, strategy = normalizeSelectionStrategy(), timeoutMs = 3500) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -205,9 +205,9 @@ async function fetchDailyTrend(code, timeoutMs = 3500) {
     const candles = Array.isArray(klines)
       ? klines.map(parseEastmoneyCandle).filter(Boolean)
       : [];
-    return calculateDailyTrend(code, candles);
+    return calculateDailyTrend(code, candles, strategy);
   } catch {
-    return fetchSinaDailyTrend(code, timeoutMs);
+    return fetchSinaDailyTrend(code, strategy, timeoutMs);
   } finally {
     clearTimeout(timer);
   }
@@ -220,7 +220,7 @@ function sinaSymbol(code) {
   return `sz${value}`;
 }
 
-async function fetchSinaDailyTrend(code, timeoutMs = 3500) {
+async function fetchSinaDailyTrend(code, strategy = normalizeSelectionStrategy(), timeoutMs = 3500) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -242,7 +242,7 @@ async function fetchSinaDailyTrend(code, timeoutMs = 3500) {
     const candles = Array.isArray(rows)
       ? rows.map(parseSinaCandle).filter(Boolean)
       : [];
-    return calculateDailyTrend(code, candles);
+    return calculateDailyTrend(code, candles, strategy);
   } catch {
     return dailyTrendUnknown();
   } finally {
@@ -295,7 +295,14 @@ function candleBefore(candles, candle) {
   return index > 0 ? candles[index - 1] : null;
 }
 
-function previousDayRule(code, candles) {
+function previousDayRule(code, candles, strategy = normalizeSelectionStrategy()) {
+  if (!strategy.requirePreviousDayPattern) {
+    return {
+      allowed: true,
+      label: "关闭",
+      detail: "前一交易日K线过滤已关闭"
+    };
+  }
   const previous = previousTradingCandle(candles);
   const before = candleBefore(candles, previous);
   if (!previous || !before || !before.close || !previous.open) {
@@ -309,12 +316,13 @@ function previousDayRule(code, candles) {
   const bodyPct = (previous.close - previous.open) / previous.open * 100;
   const upLimit = previousLimitPct(code);
   const downLimit = -upLimit;
-  const limitMove = changePct >= upLimit || changePct <= downLimit;
-  const bullishTooLarge = previous.close > previous.open && bodyPct > 5;
+  const limitMove = strategy.avoidPreviousLimitMove && (changePct >= upLimit || changePct <= downLimit);
+  const maxBullBodyPct = Number(strategy.maxPreviousBullBodyPct);
+  const bullishTooLarge = previous.close > previous.open && Number.isFinite(maxBullBodyPct) && bodyPct > maxBullBodyPct;
   const allowed = !limitMove && !bullishTooLarge;
   const reasons = [];
   if (limitMove) reasons.push(`前日涨跌幅${changePct.toFixed(2)}%触及涨跌停过滤`);
-  if (bullishTooLarge) reasons.push(`前日阳线实体${bodyPct.toFixed(2)}%大于5%`);
+  if (bullishTooLarge) reasons.push(`前日阳线实体${bodyPct.toFixed(2)}%大于${maxBullBodyPct.toFixed(1)}%`);
   return {
     allowed,
     label: allowed ? "通过" : "过滤",
@@ -334,7 +342,7 @@ function previousLimitPct(code) {
   return 9.6;
 }
 
-function calculateDailyTrend(code, candles) {
+function calculateDailyTrend(code, candles, strategy = normalizeSelectionStrategy()) {
   if (!Array.isArray(candles) || candles.length < 20) return dailyTrendUnknown();
   const closes = candles.map((candle) => candle.close).filter((value) => Number.isFinite(value));
   if (closes.length < 20) return dailyTrendUnknown();
@@ -344,7 +352,7 @@ function calculateDailyTrend(code, candles) {
   const ma10 = ma(10);
   const ma20 = ma(20);
   const bullish = close >= ma5 && ma5 > ma10 && ma10 > ma20;
-  const previousDay = previousDayRule(code, candles);
+  const previousDay = previousDayRule(code, candles, strategy);
   return {
     label: bullish ? "多头" : "未多头",
     bullish,
@@ -816,11 +824,11 @@ async function scoreBoardItem(item, index, market, selectionStrategy) {
     .filter((row) => isLateDayCandidate(row, selectionStrategy))
     .sort((a, b) => pct(b) - pct(a))
     .slice(0, 12);
-  const trends = await Promise.all(candidateRows.map((row) => fetchDailyTrend(row.f12)));
+  const trends = await Promise.all(candidateRows.map((row) => fetchDailyTrend(row.f12, selectionStrategy)));
   const stocks = candidateRows
     .map((row, rowIndex) => mapStock(row, board, market, trends[rowIndex], selectionStrategy))
     .filter((stock) => stock.score >= selectionStrategy.minStockScore)
-    .filter((stock) => stock.trend && stock.trend.previousDay && stock.trend.previousDay.allowed)
+    .filter((stock) => !selectionStrategy.requirePreviousDayPattern || stock.trend && stock.trend.previousDay && stock.trend.previousDay.allowed)
     .filter((stock) => !selectionStrategy.requireBullTrend || stock.trend && stock.trend.bullish)
     .filter((stock) => !selectionStrategy.strictLateWindow || market.mode === "late-day" || stock.action === "尾盘候选")
     .sort((a, b) => b.score - a.score || Number(b.trend.bullish) - Number(a.trend.bullish) || b.change - a.change)

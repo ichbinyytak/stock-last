@@ -3,7 +3,7 @@ const SESSION_KEY = "lateDay.session.v1";
 const AUTH_TOKEN_KEY = "lateDay.authToken.v1";
 const GUEST_ID = "guest";
 const SCHEDULE_CHECK_MS = 60 * 1000;
-const SELECTION_STRATEGY_VERSION = 2;
+const SELECTION_STRATEGY_VERSION = 3;
 const DEFAULT_OPERATION_STRATEGY = {
   maxPositions: 3,
   maxPositionPct: 30,
@@ -33,6 +33,9 @@ const DEFAULT_SELECTION_STRATEGY = {
   minActiveStocks: 3,
   requireBullTrend: false,
   avoidNearLimit: true,
+  requirePreviousDayPattern: true,
+  avoidPreviousLimitMove: true,
+  maxPreviousBullBodyPct: 5,
   preferElastic20cm: true,
   strictLateWindow: false
 };
@@ -65,6 +68,9 @@ const DEFAULT_SELECTION_FIELDS = [
   { key: "minActiveStocks", label: "活跃家数", type: "integer", min: 0, max: 20, step: 1, unit: "只", detail: "板块中涨幅 5% 以上股票的最低数量。" },
   { key: "requireBullTrend", label: "日线多头", type: "boolean", unit: "", detail: "开启后看板只显示日线多头排列候选。默认关闭，避免候选被全部筛空。" },
   { key: "avoidNearLimit", label: "避开近涨停", type: "boolean", unit: "", detail: "开启后涨停和近涨停只作板块锚点。" },
+  { key: "requirePreviousDayPattern", label: "前日K线", type: "boolean", unit: "", detail: "开启后要求候选股前一交易日通过K线过滤。" },
+  { key: "avoidPreviousLimitMove", label: "前日涨跌停", type: "boolean", unit: "", detail: "开启后过滤前一交易日涨停或跌停的个股。" },
+  { key: "maxPreviousBullBodyPct", label: "前日阳线实体", type: "number", min: 0, max: 20, step: 0.1, unit: "%", detail: "前一交易日如果是阳线，实体涨幅不能超过该值。默认 5%。" },
   { key: "preferElastic20cm", label: "偏好20cm", type: "boolean", unit: "", detail: "开启后 20cm/30cm 弹性票评分略占优。" },
   { key: "strictLateWindow", label: "仅尾盘候选", type: "boolean", unit: "", detail: "开启后只有尾盘窗口才显示买点候选。" }
 ].map((field) => ({ ...field, defaultValue: DEFAULT_SELECTION_STRATEGY[field.key] }));
