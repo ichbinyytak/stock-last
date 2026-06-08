@@ -412,6 +412,10 @@ function is20Or30(code) {
   return ["30", "68", "920", "83", "87", "43"].some((prefix) => value.startsWith(prefix));
 }
 
+function isChiNext(code) {
+  return String(code).startsWith("30");
+}
+
 function is10(code) {
   const value = String(code);
   return ["00", "001", "002", "003", "60", "600", "601", "603", "605"].some((prefix) => value.startsWith(prefix));
@@ -822,6 +826,7 @@ async function scoreBoardItem(item, index, market, selectionStrategy) {
   };
   const candidateRows = item.rows
     .filter((row) => isLateDayCandidate(row, selectionStrategy))
+    .filter((row) => !selectionStrategy.onlyChiNextCandidates || isChiNext(row.f12))
     .sort((a, b) => pct(b) - pct(a))
     .slice(0, 12);
   const trends = await Promise.all(candidateRows.map((row) => fetchDailyTrend(row.f12, selectionStrategy)));

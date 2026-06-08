@@ -3,7 +3,7 @@ const SESSION_KEY = "lateDay.session.v1";
 const AUTH_TOKEN_KEY = "lateDay.authToken.v1";
 const GUEST_ID = "guest";
 const SCHEDULE_CHECK_MS = 60 * 1000;
-const SELECTION_STRATEGY_VERSION = 3;
+const SELECTION_STRATEGY_VERSION = 4;
 const DEFAULT_OPERATION_STRATEGY = {
   maxPositions: 3,
   maxPositionPct: 30,
@@ -36,6 +36,7 @@ const DEFAULT_SELECTION_STRATEGY = {
   requirePreviousDayPattern: true,
   avoidPreviousLimitMove: true,
   maxPreviousBullBodyPct: 5,
+  onlyChiNextCandidates: true,
   preferElastic20cm: true,
   strictLateWindow: false
 };
@@ -71,6 +72,7 @@ const DEFAULT_SELECTION_FIELDS = [
   { key: "requirePreviousDayPattern", label: "前日K线", type: "boolean", unit: "", detail: "开启后要求候选股前一交易日通过K线过滤。" },
   { key: "avoidPreviousLimitMove", label: "前日涨跌停", type: "boolean", unit: "", detail: "开启后过滤前一交易日涨停或跌停的个股。" },
   { key: "maxPreviousBullBodyPct", label: "前日阳线实体", type: "number", min: 0, max: 20, step: 0.1, unit: "%", detail: "前一交易日如果是阳线，实体涨幅不能超过该值。默认 5%。" },
+  { key: "onlyChiNextCandidates", label: "仅创业板", type: "boolean", unit: "", detail: "开启后只把创业板股票列为可操作候选，其他市场只作为板块强度佐证。" },
   { key: "preferElastic20cm", label: "偏好20cm", type: "boolean", unit: "", detail: "开启后 20cm/30cm 弹性票评分略占优。" },
   { key: "strictLateWindow", label: "仅尾盘候选", type: "boolean", unit: "", detail: "开启后只有尾盘窗口才显示买点候选。" }
 ].map((field) => ({ ...field, defaultValue: DEFAULT_SELECTION_STRATEGY[field.key] }));
