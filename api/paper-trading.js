@@ -372,7 +372,7 @@ async function buyLateDayCandidates(account) {
     });
     count += 1;
   });
-  if (!count) recordEvent(account, "SKIP_BUY", "没有合格买点", "本次尾盘窗口没有满足板块强度、日线多头、非近涨停过滤的候选。");
+  if (!count) recordEvent(account, "SKIP_BUY", "没有合格买点", "本次尾盘窗口没有满足板块强度、日线多头、前一日K线、非近涨停过滤的候选。");
   else account.lastBuyDate = today;
   return count;
 }

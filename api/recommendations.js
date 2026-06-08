@@ -202,10 +202,10 @@ async function fetchDailyTrend(code, timeoutMs = 3500) {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
     const klines = payload && payload.data && payload.data.klines;
-    const closes = Array.isArray(klines)
-      ? klines.map((line) => Number(String(line).split(",")[2])).filter((value) => Number.isFinite(value))
+    const candles = Array.isArray(klines)
+      ? klines.map(parseEastmoneyCandle).filter(Boolean)
       : [];
-    return calculateDailyTrend(closes);
+    return calculateDailyTrend(code, candles);
   } catch {
     return fetchSinaDailyTrend(code, timeoutMs);
   } finally {
@@ -239,10 +239,10 @@ async function fetchSinaDailyTrend(code, timeoutMs = 3500) {
     const end = text.lastIndexOf("]");
     if (start < 0 || end <= start) return dailyTrendUnknown();
     const rows = JSON.parse(text.slice(start, end + 1));
-    const closes = Array.isArray(rows)
-      ? rows.map((row) => Number(row.close)).filter((value) => Number.isFinite(value))
+    const candles = Array.isArray(rows)
+      ? rows.map(parseSinaCandle).filter(Boolean)
       : [];
-    return calculateDailyTrend(closes);
+    return calculateDailyTrend(code, candles);
   } catch {
     return dailyTrendUnknown();
   } finally {
@@ -250,14 +250,101 @@ async function fetchSinaDailyTrend(code, timeoutMs = 3500) {
   }
 }
 
-function calculateDailyTrend(closes) {
-  if (!Array.isArray(closes) || closes.length < 20) return dailyTrendUnknown();
+function parseEastmoneyCandle(line) {
+  const parts = String(line).split(",");
+  const date = parts[0];
+  const open = Number(parts[1]);
+  const close = Number(parts[2]);
+  const high = Number(parts[3]);
+  const low = Number(parts[4]);
+  if (!date || !Number.isFinite(open) || !Number.isFinite(close)) return null;
+  return { date, open, close, high, low };
+}
+
+function parseSinaCandle(row) {
+  if (!row || typeof row !== "object") return null;
+  const date = String(row.day || row.date || "");
+  const open = Number(row.open);
+  const close = Number(row.close);
+  const high = Number(row.high);
+  const low = Number(row.low);
+  if (!date || !Number.isFinite(open) || !Number.isFinite(close)) return null;
+  return { date, open, close, high, low };
+}
+
+function chinaDateKey(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function previousTradingCandle(candles, date = new Date()) {
+  if (!Array.isArray(candles) || candles.length < 2) return null;
+  const today = chinaDateKey(date);
+  const lastIndex = candles.length - 1;
+  return candles[lastIndex].date === today ? candles[lastIndex - 1] : candles[lastIndex];
+}
+
+function candleBefore(candles, candle) {
+  const index = Array.isArray(candles) ? candles.indexOf(candle) : -1;
+  return index > 0 ? candles[index - 1] : null;
+}
+
+function previousDayRule(code, candles) {
+  const previous = previousTradingCandle(candles);
+  const before = candleBefore(candles, previous);
+  if (!previous || !before || !before.close || !previous.open) {
+    return {
+      allowed: false,
+      label: "待确认",
+      detail: "前一交易日日线数据不足，暂不放行"
+    };
+  }
+  const changePct = (previous.close - before.close) / before.close * 100;
+  const bodyPct = (previous.close - previous.open) / previous.open * 100;
+  const upLimit = previousLimitPct(code);
+  const downLimit = -upLimit;
+  const limitMove = changePct >= upLimit || changePct <= downLimit;
+  const bullishTooLarge = previous.close > previous.open && bodyPct > 5;
+  const allowed = !limitMove && !bullishTooLarge;
+  const reasons = [];
+  if (limitMove) reasons.push(`前日涨跌幅${changePct.toFixed(2)}%触及涨跌停过滤`);
+  if (bullishTooLarge) reasons.push(`前日阳线实体${bodyPct.toFixed(2)}%大于5%`);
+  return {
+    allowed,
+    label: allowed ? "通过" : "过滤",
+    date: previous.date,
+    changePct,
+    bodyPct,
+    detail: allowed
+      ? `前日${previous.date}涨跌幅${changePct.toFixed(2)}%，阳线实体${Math.max(bodyPct, 0).toFixed(2)}%，通过`
+      : reasons.join("；")
+  };
+}
+
+function previousLimitPct(code) {
+  const value = String(code);
+  if (["920", "83", "87", "43"].some((prefix) => value.startsWith(prefix))) return 29;
+  if (["30", "68"].some((prefix) => value.startsWith(prefix))) return 19;
+  return 9.6;
+}
+
+function calculateDailyTrend(code, candles) {
+  if (!Array.isArray(candles) || candles.length < 20) return dailyTrendUnknown();
+  const closes = candles.map((candle) => candle.close).filter((value) => Number.isFinite(value));
+  if (closes.length < 20) return dailyTrendUnknown();
   const ma = (period) => closes.slice(-period).reduce((sum, value) => sum + value, 0) / period;
   const close = closes[closes.length - 1];
   const ma5 = ma(5);
   const ma10 = ma(10);
   const ma20 = ma(20);
   const bullish = close >= ma5 && ma5 > ma10 && ma10 > ma20;
+  const previousDay = previousDayRule(code, candles);
   return {
     label: bullish ? "多头" : "未多头",
     bullish,
@@ -265,6 +352,7 @@ function calculateDailyTrend(closes) {
     ma5,
     ma10,
     ma20,
+    previousDay,
     detail: `收${close.toFixed(2)} MA5 ${ma5.toFixed(2)} MA10 ${ma10.toFixed(2)} MA20 ${ma20.toFixed(2)}`
   };
 }
@@ -277,6 +365,11 @@ function dailyTrendUnknown() {
     ma5: 0,
     ma10: 0,
     ma20: 0,
+    previousDay: {
+      allowed: false,
+      label: "待确认",
+      detail: "日线数据暂不可用，前一交易日规则暂不放行"
+    },
     detail: "日线数据暂不可用"
   };
 }
@@ -620,6 +713,7 @@ function stockReasons(row, board, state, trend = dailyTrendUnknown()) {
   reasons.push(`个股状态${state}，涨幅${number(row.f3, 0).toFixed(2)}%`);
   reasons.push(`换手${number(row.f8, 0).toFixed(1)}%，量比${number(row.f10, 0).toFixed(1)}`);
   reasons.push(`日线${trend.label}排列：${trend.detail}`);
+  reasons.push(`前日过滤${trend.previousDay.label}：${trend.previousDay.detail}`);
   if (board.front20) reasons.push(`同板块有${board.front20}只20cm/30cm前排`);
   if (board.support10) reasons.push(`同板块有${board.support10}只10cm助攻`);
   reasons.push("尾盘买入只在14:30后确认承接，不提前抢跑");
@@ -726,6 +820,7 @@ async function scoreBoardItem(item, index, market, selectionStrategy) {
   const stocks = candidateRows
     .map((row, rowIndex) => mapStock(row, board, market, trends[rowIndex], selectionStrategy))
     .filter((stock) => stock.score >= selectionStrategy.minStockScore)
+    .filter((stock) => stock.trend && stock.trend.previousDay && stock.trend.previousDay.allowed)
     .filter((stock) => !selectionStrategy.requireBullTrend || stock.trend && stock.trend.bullish)
     .filter((stock) => !selectionStrategy.strictLateWindow || market.mode === "late-day" || stock.action === "尾盘候选")
     .sort((a, b) => b.score - a.score || Number(b.trend.bullish) - Number(a.trend.bullish) || b.change - a.change)
