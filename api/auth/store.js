@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const ADMIN_USERS = require("./users");
 
 const USERS_KEY = "lateDay:managedUsers:v1";
+const localManagedUsers = {};
 const DEFAULT_MANAGED_USERS = {
   test: {
     key: "test",
@@ -48,6 +49,10 @@ function kvConfigured() {
   return Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
 }
 
+function allowLocalUserStore() {
+  return !process.env.VERCEL;
+}
+
 function kvUrl(pathname = "") {
   const base = String(process.env.KV_REST_API_URL || "").replace(/\/+$/, "");
   const pathPart = pathname ? `/${String(pathname).replace(/^\/+/, "")}` : "";
@@ -68,7 +73,7 @@ async function kvRequest(pathname, init = {}) {
 }
 
 async function readStoredManagedUsers() {
-  if (!kvConfigured()) return {};
+  if (!kvConfigured()) return allowLocalUserStore() ? { ...localManagedUsers } : {};
   const payload = await kvRequest(`/get/${encodeURIComponent(USERS_KEY)}`);
   if (!payload.result) return {};
   if (typeof payload.result === "string") return JSON.parse(payload.result);
@@ -77,6 +82,11 @@ async function readStoredManagedUsers() {
 
 async function writeStoredManagedUsers(users) {
   if (!kvConfigured()) {
+    if (allowLocalUserStore()) {
+      Object.keys(localManagedUsers).forEach((key) => delete localManagedUsers[key]);
+      Object.assign(localManagedUsers, { ...users });
+      return;
+    }
     throw new Error("未配置服务器用户存储，请在 Vercel 配置 KV_REST_API_URL 和 KV_REST_API_TOKEN");
   }
   await kvRequest("", {
