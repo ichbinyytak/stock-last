@@ -18,7 +18,7 @@
 
       <div class="status-strip" aria-label="看板状态">
         <span class="status-pill live" id="marketStatus">交易中</span>
-        <span>刷新 <strong>3s</strong></span>
+        <span>刷新 <strong id="refreshMode">手动</strong></span>
         <span>更新时间 <strong id="updatedAt">--:--:--</strong></span>
         <span>数据 <strong id="dataMode">实时</strong></span>
         <span>窗口 <strong id="buyWindow">跟踪</strong></span>
@@ -26,9 +26,10 @@
         <span>外链 <strong id="fastSite">测速中</strong></span>
       </div>
 
-      <button class="refresh-btn" id="refreshBtn" type="button" aria-label="刷新候选">
-        刷新
-      </button>
+      <div class="refresh-actions" aria-label="刷新控制">
+        <button class="refresh-btn" id="refreshBtn" type="button" aria-label="立即刷新候选">刷新</button>
+        <button class="auto-refresh-btn" id="autoRefreshBtn" type="button" aria-pressed="false">自动：关</button>
+      </div>
 
       <a class="auth-btn" id="accountLink" href="./account.html" aria-label="进入用户中心">
         账户

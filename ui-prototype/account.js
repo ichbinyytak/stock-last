@@ -95,6 +95,8 @@ let selectionStrategy = { ...DEFAULT_SELECTION_STRATEGY };
 let selectionStrategyFields = DEFAULT_SELECTION_FIELDS;
 let editingCode = "";
 let quoteTimer = null;
+let autoRefreshEnabled = false;
+let paperAccountSignature = "";
 
 function shanghaiClock(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -452,6 +454,12 @@ function syncPaperAccount(snapshot) {
   saveLocalStrategies();
 }
 
+function paperDataSignature(snapshot) {
+  return JSON.stringify(snapshot, (key, value) => (
+    key === "updatedAt" || key === "quoteUpdatedAt" || key === "lastRunAt" ? undefined : value
+  ));
+}
+
 async function loadPaperAccount(run = false, reschedule = true) {
   if (!currentUser || !paperMode) return;
   const response = await fetch(`/api/paper-trading${run ? "?run=1" : ""}`, {
@@ -461,6 +469,12 @@ async function loadPaperAccount(run = false, reschedule = true) {
   });
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || "加载模拟盘失败");
+  const nextSignature = paperDataSignature(payload.account);
+  if (!run && nextSignature === paperAccountSignature) {
+    if (reschedule) schedulePositionRefresh();
+    return;
+  }
+  paperAccountSignature = nextSignature;
   syncPaperAccount(payload.account);
   renderAll();
   if (reschedule) schedulePositionRefresh();
@@ -1004,12 +1018,22 @@ async function refreshPositionQuotes() {
       if (!quote || !quote.price) return;
       const old = positions[item.code];
       if (!old) return;
+      const nextValues = {
+        lastPrice: quote.price,
+        name: old.name || quote.name,
+        quoteChange: quote.change,
+        openPrice: quote.open || old.openPrice || 0,
+        highPrice: quote.high || old.highPrice || 0,
+        lowPrice: quote.low || old.lowPrice || 0
+      };
+      const quoteChanged = Object.entries(nextValues).some(([key, value]) => old[key] !== value);
+      if (!quoteChanged) return;
       old.lastPrice = quote.price;
-      old.name = old.name || quote.name;
-      old.quoteChange = quote.change;
-      old.openPrice = quote.open || old.openPrice || 0;
-      old.highPrice = quote.high || old.highPrice || 0;
-      old.lowPrice = quote.low || old.lowPrice || 0;
+      old.name = nextValues.name;
+      old.quoteChange = nextValues.quoteChange;
+      old.openPrice = nextValues.openPrice;
+      old.highPrice = nextValues.highPrice;
+      old.lowPrice = nextValues.lowPrice;
       old.quoteUpdatedAt = payload.updatedAt;
       changed = true;
     });
@@ -1025,9 +1049,10 @@ async function refreshPositionQuotes() {
 
 function schedulePositionRefresh() {
   if (quoteTimer) {
-    clearInterval(quoteTimer);
+    clearTimeout(quoteTimer);
     quoteTimer = null;
   }
+  if (!autoRefreshEnabled) return;
   if (!currentUser || !positionRows().length) return;
   if (!marketRefreshWindow()) {
     quoteTimer = setTimeout(schedulePositionRefresh, SCHEDULE_CHECK_MS);
@@ -1036,13 +1061,26 @@ function schedulePositionRefresh() {
   refreshPositionQuotes();
   quoteTimer = setInterval(() => {
     if (!marketRefreshWindow()) {
-      clearInterval(quoteTimer);
+      clearTimeout(quoteTimer);
       quoteTimer = null;
       schedulePositionRefresh();
       return;
     }
     refreshPositionQuotes();
   }, 3000);
+}
+
+function updateAutoRefreshUi() {
+  const button = document.getElementById("accountAutoRefreshBtn");
+  if (!button) return;
+  button.textContent = autoRefreshEnabled ? "自动：开" : "自动：关";
+  button.setAttribute("aria-pressed", String(autoRefreshEnabled));
+}
+
+function toggleAutoRefresh() {
+  autoRefreshEnabled = !autoRefreshEnabled;
+  updateAutoRefreshUi();
+  schedulePositionRefresh();
 }
 
 document.getElementById("accountAuthForm").addEventListener("submit", async (event) => {
@@ -1058,6 +1096,8 @@ document.getElementById("accountAuthForm").addEventListener("submit", async (eve
 });
 
 document.getElementById("accountLogoutBtn").addEventListener("click", logoutUser);
+document.getElementById("accountRefreshBtn").addEventListener("click", refreshPositionQuotes);
+document.getElementById("accountAutoRefreshBtn").addEventListener("click", toggleAutoRefresh);
 document.getElementById("openLoginBtn").addEventListener("click", () => openModal("loginModal"));
 document.getElementById("openMoneyBtn").addEventListener("click", () => openModal("moneyModal"));
 document.getElementById("openTradeBtn").addEventListener("click", () => openModal("tradeModal"));
@@ -1232,7 +1272,7 @@ function init() {
   paperMode = currentUser && currentUser.key === "test";
   if (currentUser) loadUserData();
   renderAll();
-  schedulePositionRefresh();
+  updateAutoRefreshUi();
   if (paperMode) loadPaperAccount(false).catch((error) => {
     setMessage(error instanceof Error ? error.message : String(error), "error");
   });

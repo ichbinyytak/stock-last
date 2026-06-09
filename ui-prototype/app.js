@@ -4,6 +4,7 @@ const SESSION_KEY = "lateDay.session.v1";
 const AUTH_TOKEN_KEY = "lateDay.authToken.v1";
 const GUEST_ID = "guest";
 const SCHEDULE_CHECK_MS = 60 * 1000;
+const AUTO_REFRESH_MS = 3000;
 const SELECTION_STRATEGY_VERSION = 4;
 const DEFAULT_SELECTION_STRATEGY = {
   minStockChangePct: 3,
@@ -43,6 +44,8 @@ let favorites = new Set();
 let positions = {};
 let buyTarget = null;
 let refreshTimer = null;
+let autoRefreshEnabled = false;
+let recommendationSignature = "";
 
 function shanghaiClock(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -521,23 +524,40 @@ function isMarketRefreshWindow(date = new Date()) {
 
 function scheduleBoardRefresh() {
   if (refreshTimer) {
-    clearInterval(refreshTimer);
+    clearTimeout(refreshTimer);
     refreshTimer = null;
   }
+  if (!autoRefreshEnabled) return;
   if (!isMarketRefreshWindow()) {
     refreshTimer = setTimeout(scheduleBoardRefresh, SCHEDULE_CHECK_MS);
     return;
   }
   refreshTimer = setInterval(() => {
     if (!isMarketRefreshWindow()) {
-      clearInterval(refreshTimer);
+      clearTimeout(refreshTimer);
       refreshTimer = null;
       updateMarketStatus();
       scheduleBoardRefresh();
       return;
     }
     loadRecommendations();
-  }, 3000);
+  }, AUTO_REFRESH_MS);
+}
+
+function updateAutoRefreshUi() {
+  const button = document.getElementById("autoRefreshBtn");
+  const mode = document.getElementById("refreshMode");
+  if (button) {
+    button.textContent = autoRefreshEnabled ? "自动：开" : "自动：关";
+    button.setAttribute("aria-pressed", String(autoRefreshEnabled));
+  }
+  if (mode) mode.textContent = autoRefreshEnabled ? "3s" : "手动";
+}
+
+function toggleAutoRefresh() {
+  autoRefreshEnabled = !autoRefreshEnabled;
+  updateAutoRefreshUi();
+  scheduleBoardRefresh();
 }
 
 function chooseFastSite() {
@@ -725,11 +745,19 @@ function recommendationsUrl() {
   return `/api/recommendations?${params}`;
 }
 
+function recommendationDataSignature(payload) {
+  return JSON.stringify({
+    market: payload.market || null,
+    summary: payload.summary || null,
+    boards: payload.boards || []
+  });
+}
+
 async function loadRecommendations(options = {}) {
   if (isLoading && !options.force) return;
   isLoading = true;
   updateMarketStatus();
-  if (!boards.length || options.force) setLoading();
+  if (!boards.length) setLoading();
   try {
     const response = await fetch(recommendationsUrl(), {
       cache: "no-store"
@@ -738,7 +766,12 @@ async function loadRecommendations(options = {}) {
     if (!response.ok) {
       throw new Error(payload.detail || payload.error || `HTTP ${response.status}`);
     }
-    boards = Array.isArray(payload.boards) ? payload.boards : [];
+    const nextBoards = Array.isArray(payload.boards) ? payload.boards : [];
+    if (!nextBoards.length && boards.length) return;
+    const nextSignature = recommendationDataSignature(payload);
+    if (nextSignature === recommendationSignature) return;
+    recommendationSignature = nextSignature;
+    boards = nextBoards;
     strategySummary = payload.summary || null;
     ensureSelection();
     updateClock(payload.updatedAt);
@@ -747,6 +780,7 @@ async function loadRecommendations(options = {}) {
     renderSummary(strategySummary);
     renderBoards();
   } catch (error) {
+    if (boards.length) return;
     boards = [];
     strategySummary = null;
     setSource("接口失败");
@@ -801,6 +835,7 @@ document.getElementById("refreshBtn").addEventListener("click", () => {
   updateMarketStatus();
   loadRecommendations({ force: true });
 });
+document.getElementById("autoRefreshBtn").addEventListener("click", toggleAutoRefresh);
 
 const authBtn = document.getElementById("authBtn");
 if (authBtn) authBtn.addEventListener("click", showAuthModal);
@@ -834,9 +869,9 @@ async function init() {
   initAuth();
   chooseFastSite();
   updateMarketStatus();
+  updateAutoRefreshUi();
   await loadPaperSelectionStrategy();
   await loadRecommendations();
-  scheduleBoardRefresh();
 }
 
 init();

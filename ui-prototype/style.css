@@ -104,6 +104,7 @@ p {
 }
 
 .refresh-btn,
+.auto-refresh-btn,
 .auth-btn,
 .mini-btn,
 .icon-btn,
@@ -168,6 +169,7 @@ p {
 }
 
 .refresh-btn,
+.auto-refresh-btn,
 .auth-btn {
   width: 64px;
   color: var(--blue);
@@ -182,11 +184,35 @@ p {
   font-size: 12px;
 }
 
+.refresh-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.auto-refresh-btn {
+  width: auto;
+  min-height: 24px;
+  padding: 1px 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.auto-refresh-btn[aria-pressed="true"] {
+  border-color: #9dc1f5;
+  background: var(--blue-bg);
+  color: var(--blue);
+}
+
 .auth-btn {
   width: 72px;
 }
 
 .refresh-btn:hover,
+.auto-refresh-btn:hover,
 .auth-btn:hover,
 .mini-btn:hover,
 .icon-btn:hover,
@@ -1439,6 +1465,10 @@ body {
 
 .refresh-btn {
   width: 54px;
+  min-height: 30px;
+}
+
+.auto-refresh-btn {
   min-height: 30px;
 }
 
