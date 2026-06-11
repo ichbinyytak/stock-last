@@ -286,12 +286,12 @@ function flattenCandidates(result, account) {
   return (result.boards || [])
     .flatMap((board) => (board.stocks || []).map((stock) => ({ board, stock })))
     .filter(({ stock }) => !held.has(String(stock.code)))
+    .filter(({ stock }) => operationMarketAllowed(stock.code, strategy.tradeMarkets))
     .filter(({ stock }) => Number(stock.price || 0) > 0)
     .filter(({ stock }) => Number(stock.change || 0) >= strategy.minChangePct && Number(stock.change || 0) <= strategy.maxChangePct)
     .filter(({ stock }) => Number(stock.turnover || 0) <= strategy.maxTurnoverPct)
-    .filter(({ stock }) => stock.risk !== "高换手")
     .filter(({ board }) => Number(board.score || 0) >= strategy.minBoardScore)
-    .filter(({ stock }) => stock.action === "尾盘候选" || Number(stock.score || 0) >= strategy.minStockScore)
+    .filter(({ stock }) => stock.action === "尾盘候选")
     .filter(({ stock }) => Number(stock.score || 0) >= strategy.minStockScore)
     .filter(({ stock }) => Number(stock.confidence || 0) >= strategy.minConfidence)
     .filter(({ stock }) => !strategy.requireBullTrend || stock.trend && stock.trend.bullish)
@@ -300,6 +300,19 @@ function flattenCandidates(result, account) {
         || Number(b.stock.score || 0) - Number(a.stock.score || 0)
         || Number(b.stock.confidence || 0) - Number(a.stock.confidence || 0);
     });
+}
+
+function operationMarket(code) {
+  const value = String(code);
+  if (value.startsWith("30")) return "chinext";
+  if (value.startsWith("68")) return "star";
+  if (["920", "83", "87", "43", "4", "8", "9"].some((prefix) => value.startsWith(prefix))) return "beijing";
+  return "main";
+}
+
+function operationMarketAllowed(code, markets) {
+  const allowed = Array.isArray(markets) && markets.length ? markets : ["chinext"];
+  return allowed.includes("all") || allowed.includes(operationMarket(code));
 }
 
 function buyQuantity(cash, price, slots, strategy) {
@@ -372,7 +385,7 @@ async function buyLateDayCandidates(account) {
     });
     count += 1;
   });
-  if (!count) recordEvent(account, "SKIP_BUY", "没有合格买点", "本次尾盘窗口没有满足仅创业板、板块强度、日线多头、前一日K线、非近涨停过滤的候选。");
+  if (!count) recordEvent(account, "SKIP_BUY", "没有合格买点", "本次尾盘窗口没有满足操作市场范围、板块强度、日线多头、前一日K线和非近涨停过滤的候选。");
   else account.lastBuyDate = today;
   return count;
 }
@@ -477,3 +490,5 @@ async function handler(req, res) {
 }
 
 module.exports = handler;
+handler.operationMarket = operationMarket;
+handler.operationMarketAllowed = operationMarketAllowed;

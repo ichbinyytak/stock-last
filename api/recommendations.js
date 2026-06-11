@@ -11,7 +11,7 @@ const { normalizeSelectionStrategy } = require("./strategy-config");
 
 const UT = "bd1d9ddb04089700cf9c27f6f7426281";
 const BOARD_FIELDS = "f12,f14,f2,f3,f4,f8,f20,f104,f105,f128,f140";
-const STOCK_FIELDS = "f12,f14,f2,f3,f4,f6,f8,f10,f20";
+const STOCK_FIELDS = "f12,f14,f2,f3,f4,f6,f8,f10,f20,f21";
 
 function chinaTimeParts(date = new Date()) {
   const parts = new Intl.DateTimeFormat("zh-CN", {
@@ -187,7 +187,7 @@ async function fetchDailyTrend(code, strategy = normalizeSelectionStrategy(), ti
       klt: "101",
       fqt: "1",
       end: "20500101",
-      lmt: "40",
+      lmt: String(Math.min(250, Math.max(130, strategy.volumeAverageDays + strategy.recentVolumeLookbackDays + strategy.highBreakoutLookbackDays + 5))),
       fields1: "f1,f2,f3,f4,f5,f6",
       fields2: "f51,f52,f53,f54,f55,f56"
     });
@@ -224,7 +224,8 @@ async function fetchSinaDailyTrend(code, strategy = normalizeSelectionStrategy()
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const url = `https://quotes.sina.cn/cn/api/jsonp_v2.php/var%20k=/CN_MarketDataService.getKLineData?symbol=${sinaSymbol(code)}&scale=240&ma=no&datalen=40`;
+    const dataLength = Math.min(250, Math.max(130, strategy.volumeAverageDays + strategy.recentVolumeLookbackDays + strategy.highBreakoutLookbackDays + 5));
+    const url = `https://quotes.sina.cn/cn/api/jsonp_v2.php/var%20k=/CN_MarketDataService.getKLineData?symbol=${sinaSymbol(code)}&scale=240&ma=no&datalen=${dataLength}`;
     const response = await fetch(url, {
       headers: {
         "User-Agent": "Mozilla/5.0",
@@ -250,6 +251,57 @@ async function fetchSinaDailyTrend(code, strategy = normalizeSelectionStrategy()
   }
 }
 
+async function fetchIntradayMomentum(code, windowMinutes = 15, timeoutMs = 3500) {
+  const query = new URLSearchParams({
+    secid: stockSecid(code),
+    fields1: "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13",
+    fields2: "f51,f52,f53,f54,f55,f56,f57,f58",
+    iscr: "0",
+    ndays: "1"
+  });
+  const hosts = Array.from(new Set(["https://push2delay.eastmoney.com", ...HOSTS, "https://push2his.eastmoney.com"]));
+  for (const host of hosts) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(`${host}/api/qt/stock/trends2/get?${query}`, {
+        headers: {
+          "User-Agent": "Mozilla/5.0",
+          Referer: "https://quote.eastmoney.com/",
+          Accept: "application/json,text/plain,*/*"
+        },
+        signal: controller.signal
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = await response.json();
+      const trends = payload && payload.data && payload.data.trends;
+      const points = Array.isArray(trends) ? trends.map((line) => {
+        const parts = String(line).split(",");
+        const time = new Date(`${parts[0].replace(" ", "T")}:00+08:00`);
+        const close = Number(parts[2]);
+        return Number.isFinite(time.getTime()) && Number.isFinite(close) ? { time, close } : null;
+      }).filter(Boolean) : [];
+      const latest = points.at(-1);
+      if (!latest) throw new Error("empty minute trends");
+      const targetTime = latest.time.getTime() - Number(windowMinutes) * 60 * 1000;
+      const base = points.filter((point) => point.time.getTime() <= targetTime).at(-1);
+      if (!base || !base.close) throw new Error("insufficient minute trends");
+      return {
+        available: true,
+        changePct: (latest.close - base.close) / base.close * 100,
+        latestAt: latest.time.toISOString(),
+        latestPrice: latest.close,
+        basePrice: base.close
+      };
+    } catch {
+      // Try the next quote host.
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return { available: false, changePct: null, latestAt: "" };
+}
+
 function parseEastmoneyCandle(line) {
   const parts = String(line).split(",");
   const date = parts[0];
@@ -257,8 +309,9 @@ function parseEastmoneyCandle(line) {
   const close = Number(parts[2]);
   const high = Number(parts[3]);
   const low = Number(parts[4]);
+  const volume = Number(parts[5]);
   if (!date || !Number.isFinite(open) || !Number.isFinite(close)) return null;
-  return { date, open, close, high, low };
+  return { date, open, close, high, low, volume: Number.isFinite(volume) ? volume : 0 };
 }
 
 function parseSinaCandle(row) {
@@ -268,8 +321,9 @@ function parseSinaCandle(row) {
   const close = Number(row.close);
   const high = Number(row.high);
   const low = Number(row.low);
+  const volume = Number(row.volume);
   if (!date || !Number.isFinite(open) || !Number.isFinite(close)) return null;
-  return { date, open, close, high, low };
+  return { date, open, close, high, low, volume: Number.isFinite(volume) ? volume : 0 };
 }
 
 function chinaDateKey(date = new Date()) {
@@ -296,18 +350,13 @@ function candleBefore(candles, candle) {
 }
 
 function previousDayRule(code, candles, strategy = normalizeSelectionStrategy()) {
-  if (!strategy.requirePreviousDayPattern) {
-    return {
-      allowed: true,
-      label: "关闭",
-      detail: "前一交易日K线过滤已关闭"
-    };
-  }
   const previous = previousTradingCandle(candles);
   const before = candleBefore(candles, previous);
   if (!previous || !before || !before.close || !previous.open) {
     return {
       allowed: false,
+      patternAllowed: false,
+      changeAllowed: false,
       label: "待确认",
       detail: "前一交易日日线数据不足，暂不放行"
     };
@@ -317,20 +366,23 @@ function previousDayRule(code, candles, strategy = normalizeSelectionStrategy())
   const upLimit = previousLimitPct(code);
   const downLimit = -upLimit;
   const limitMove = strategy.avoidPreviousLimitMove && (changePct >= upLimit || changePct <= downLimit);
-  const maxBullBodyPct = Number(strategy.maxPreviousBullBodyPct);
-  const bullishTooLarge = previous.close > previous.open && Number.isFinite(maxBullBodyPct) && bodyPct > maxBullBodyPct;
-  const allowed = !limitMove && !bullishTooLarge;
+  const previousChangeTooLarge = strategy.requirePreviousDayChangeLimit && changePct >= Number(strategy.maxPreviousDayChangePct);
+  const patternAllowed = !limitMove;
+  const changeAllowed = !previousChangeTooLarge;
+  const allowed = patternAllowed && changeAllowed;
   const reasons = [];
   if (limitMove) reasons.push(`前日涨跌幅${changePct.toFixed(2)}%触及涨跌停过滤`);
-  if (bullishTooLarge) reasons.push(`前日阳线实体${bodyPct.toFixed(2)}%大于${maxBullBodyPct.toFixed(1)}%`);
+  if (previousChangeTooLarge) reasons.push(`昨日实际涨幅${changePct.toFixed(2)}%不小于${Number(strategy.maxPreviousDayChangePct).toFixed(1)}%`);
   return {
     allowed,
+    patternAllowed,
+    changeAllowed,
     label: allowed ? "通过" : "过滤",
     date: previous.date,
     changePct,
     bodyPct,
     detail: allowed
-      ? `前日${previous.date}涨跌幅${changePct.toFixed(2)}%，阳线实体${Math.max(bodyPct, 0).toFixed(2)}%，通过`
+      ? `前日${previous.date}涨跌幅${changePct.toFixed(2)}%，通过`
       : reasons.join("；")
   };
 }
@@ -340,6 +392,53 @@ function previousLimitPct(code) {
   if (["920", "83", "87", "43"].some((prefix) => value.startsWith(prefix))) return 29;
   if (["30", "68"].some((prefix) => value.startsWith(prefix))) return 19;
   return 9.6;
+}
+
+function calculateExtendedDailyRules(candles, strategy) {
+  const closes = candles.map((candle) => candle.close).filter(Number.isFinite);
+  const volumes = candles.map((candle) => candle.volume).filter((value) => Number.isFinite(value) && value >= 0);
+  const tenDayLookback = Number(strategy.tenDayGainLookbackDays || 10);
+  const tenDayGainPct = closes.length >= tenDayLookback + 1 && closes.at(-tenDayLookback - 1) > 0
+    ? (closes.at(-1) - closes.at(-tenDayLookback - 1)) / closes.at(-tenDayLookback - 1) * 100
+    : null;
+  const tenDayGainAllowed = Number.isFinite(tenDayGainPct)
+    && tenDayGainPct >= Number(strategy.minTenDayGainPct)
+    && tenDayGainPct <= Number(strategy.maxTenDayGainPct);
+  const averageDays = Number(strategy.volumeAverageDays);
+  const lookbackDays = Number(strategy.recentVolumeLookbackDays);
+  const volumeSample = volumes.slice(-averageDays);
+  const volumeAverage = volumeSample.length >= averageDays
+    ? volumeSample.reduce((sum, value) => sum + value, 0) / volumeSample.length
+    : null;
+  const recentHighVolumeDays = Number.isFinite(volumeAverage)
+    ? volumes.slice(-lookbackDays).filter((value) => value > volumeAverage).length
+    : 0;
+  const volumeExpansionAllowed = Number.isFinite(volumeAverage)
+    && recentHighVolumeDays >= Number(strategy.minRecentHighVolumeDays);
+  const lookbackHighDays = Number(strategy.highBreakoutLookbackDays);
+  const completedCandles = candles.filter((candle) => candle.date !== chinaDateKey());
+  const highSample = completedCandles.slice(-lookbackHighDays).map((candle) => candle.high).filter(Number.isFinite);
+  const periodHigh = highSample.length >= lookbackHighDays ? Math.max(...highSample) : null;
+  return {
+    tenDayGainPct,
+    tenDayGainAllowed,
+    volumeAverage,
+    recentHighVolumeDays,
+    volumeExpansionAllowed,
+    periodHigh,
+    highBreakoutAllowed: false
+  };
+}
+
+function withRealtimeBreakout(trend, price, strategy) {
+  const periodHigh = trend && Number.isFinite(trend.periodHigh) ? trend.periodHigh : null;
+  const highBreakoutAllowed = Number.isFinite(periodHigh) && Number(price) >= periodHigh;
+  return {
+    ...trend,
+    periodHigh,
+    highBreakoutAllowed,
+    detail: `${trend.detail}；${Number(strategy.highBreakoutLookbackDays)}日高${Number.isFinite(periodHigh) ? periodHigh.toFixed(2) : "--"}`
+  };
 }
 
 function calculateDailyTrend(code, candles, strategy = normalizeSelectionStrategy()) {
@@ -353,6 +452,7 @@ function calculateDailyTrend(code, candles, strategy = normalizeSelectionStrateg
   const ma20 = ma(20);
   const bullish = close >= ma5 && ma5 > ma10 && ma10 > ma20;
   const previousDay = previousDayRule(code, candles, strategy);
+  const extended = calculateExtendedDailyRules(candles, strategy);
   return {
     label: bullish ? "多头" : "未多头",
     bullish,
@@ -361,7 +461,8 @@ function calculateDailyTrend(code, candles, strategy = normalizeSelectionStrateg
     ma10,
     ma20,
     previousDay,
-    detail: `收${close.toFixed(2)} MA5 ${ma5.toFixed(2)} MA10 ${ma10.toFixed(2)} MA20 ${ma20.toFixed(2)}`
+    ...extended,
+    detail: `收${close.toFixed(2)} MA5 ${ma5.toFixed(2)} MA10 ${ma10.toFixed(2)} MA20 ${ma20.toFixed(2)}；${Number(strategy.tenDayGainLookbackDays || 10)}日${Number.isFinite(extended.tenDayGainPct) ? extended.tenDayGainPct.toFixed(2) : "--"}%；近期放量${extended.recentHighVolumeDays}日`
   };
 }
 
@@ -375,9 +476,18 @@ function dailyTrendUnknown() {
     ma20: 0,
     previousDay: {
       allowed: false,
+      patternAllowed: false,
+      changeAllowed: false,
       label: "待确认",
       detail: "日线数据暂不可用，前一交易日规则暂不放行"
     },
+    tenDayGainPct: null,
+    tenDayGainAllowed: false,
+    volumeAverage: null,
+    recentHighVolumeDays: 0,
+    volumeExpansionAllowed: false,
+    periodHigh: null,
+    highBreakoutAllowed: false,
     detail: "日线数据暂不可用"
   };
 }
@@ -412,13 +522,26 @@ function is20Or30(code) {
   return ["30", "68", "920", "83", "87", "43"].some((prefix) => value.startsWith(prefix));
 }
 
-function isChiNext(code) {
-  return String(code).startsWith("30");
-}
-
 function is10(code) {
   const value = String(code);
   return ["00", "001", "002", "003", "60", "600", "601", "603", "605"].some((prefix) => value.startsWith(prefix));
+}
+
+function stockMarket(code) {
+  const value = String(code);
+  if (value.startsWith("30")) return "chinext";
+  if (value.startsWith("68")) return "star";
+  if (["920", "83", "87", "43", "4", "8", "9"].some((prefix) => value.startsWith(prefix))) return "beijing";
+  return "main";
+}
+
+function selectionMarketAllowed(code, markets) {
+  const allowed = Array.isArray(markets) && markets.length ? markets : ["all"];
+  return allowed.includes("all") || allowed.includes(stockMarket(code));
+}
+
+function lateMomentumWindowActive(market) {
+  return market && (market.mode === "late-day" || market.mode === "close-auction");
 }
 
 function isTradableStock(row) {
@@ -441,13 +564,23 @@ function isLateDayCandidate(row, strategy) {
   const change = pct(row);
   const turnover = number(row.f8, 0);
   const volumeRatio = number(row.f10, 0);
+  const freeFloatCap = number(row.f21, 0);
   if (!isTradableStock(row)) return false;
   if (strategy.avoidNearLimit && isNearLimit(row)) return false;
-  return change >= strategy.minStockChangePct
-    && change <= strategy.maxStockChangePct
-    && turnover >= strategy.minTurnoverPct
-    && turnover <= strategy.maxTurnoverPct
-    && volumeRatio >= strategy.minVolumeRatio;
+  if (strategy.requireFreeFloatCapLimit) {
+    const minFreeFloatCap = Number(strategy.minFreeFloatCapYi) * 100000000;
+    const maxFreeFloatCap = Number(strategy.maxFreeFloatCapYi) * 100000000;
+    if (!freeFloatCap || freeFloatCap < minFreeFloatCap || freeFloatCap > maxFreeFloatCap) return false;
+  }
+  return (!strategy.useStockChangeFilter
+      || (change >= strategy.minStockChangePct
+        && change <= strategy.maxStockChangePct))
+    && (!strategy.useTurnoverVolumeRatio
+      || (turnover >= strategy.minTurnoverPct
+        && turnover <= strategy.maxTurnoverPct))
+    && (!strategy.useVolumeRatioFilter
+      || (volumeRatio >= Number(strategy.minVolumeRatio)
+        && volumeRatio <= Number(strategy.maxVolumeRatio)));
 }
 
 function formatMoney(value) {
@@ -650,10 +783,10 @@ function stockState(row) {
   return "观察";
 }
 
-function stockRisk(row, state) {
+function stockRisk(row, state, strategy = normalizeSelectionStrategy()) {
   const turnover = number(row.f8, 0);
   const cap = number(row.f20, 0);
-  if (turnover >= 25) return "高换手";
+  if (strategy.useTurnoverVolumeRatio && turnover >= 25) return "高换手";
   if (cap >= 30000000000) return "容量大";
   if (state.includes("近封") && turnover > 5 && turnover < 22) return "低";
   if (state.includes("观察") || state === "前排跟随") return "中";
@@ -671,11 +804,11 @@ function stockScore(row, boardScore, state, trend = dailyTrendUnknown(), strateg
     : state.includes("10cm确认") ? 8
     : state.includes("10cm助攻") ? 14
     : 8;
-  const turnoverScore = turnover >= 5 && turnover <= 22 ? 10 : turnover > 22 ? 5 : 6;
+  const turnoverScore = !strategy.useTurnoverVolumeRatio ? 8 : turnover >= 5 && turnover <= 22 ? 10 : turnover > 22 ? 5 : 6;
+  const volumeRatioScore = strategy.useVolumeRatioFilter ? Math.min(volumeRatio, 5) : 2;
   const positionScore = change >= 5 && change <= 16 ? 8 : change > 18 ? 2 : 4;
   const trendScore = trend.bullish ? 5 : trend.label === "待确认" ? 0 : -2;
-  const elasticScore = strategy.preferElastic20cm && is20Or30(row.f12) ? 3 : 0;
-  return Math.round(Math.min(96, boardScore * 0.33 + stateScore + change * 0.55 + turnoverScore + positionScore + Math.min(volumeRatio, 5) + trendScore + elasticScore));
+  return Math.round(Math.min(96, boardScore * 0.33 + stateScore + change * 0.55 + turnoverScore + positionScore + volumeRatioScore + trendScore));
 }
 
 function stockConfidence(score, risk, market) {
@@ -688,19 +821,26 @@ function stockConfidence(score, risk, market) {
   return Math.max(35, Math.min(92, Math.round(confidence)));
 }
 
-function stockAction(score, risk, state, board, market) {
+function boardActionPass(board, strategy, fallbackScore = 84) {
+  if (!strategy.useBoardScoreFilter) return true;
+  const threshold = Number.isFinite(Number(strategy.minBoardScore)) ? Number(strategy.minBoardScore) : fallbackScore;
+  return Number(board.score || 0) >= threshold;
+}
+
+function stockAction(score, risk, state, board, market, strategy = normalizeSelectionStrategy()) {
   const phase = phaseAdvice(market);
+  const boardPass = boardActionPass(board, strategy, 84);
   if (market.mode === "auction-open") return "只观察";
   if (market.mode === "auction-locked") {
-    if (score >= 86 && board.score >= 86 && risk !== "高换手") return "竞价强";
+    if (score >= 86 && boardPass && risk !== "高换手") return "竞价强";
     return "等9:25";
   }
   if (market.mode === "pre-open") {
-    if (score >= 84 && board.score >= 84 && (state.includes("20cm") || state.includes("10cm确认"))) return "开盘盯";
+    if (score >= 84 && boardPass && (state.includes("20cm") || state.includes("10cm确认"))) return "开盘盯";
     return "等9:30";
   }
   if (market.mode !== "late-day") return phase.stockAction;
-  if (score >= 84 && board.score >= 84 && risk !== "高换手") return "尾盘候选";
+  if (score >= 84 && boardPass && risk !== "高换手") return "尾盘候选";
   if (score >= 76) return "等承接";
   return "降级";
 }
@@ -719,11 +859,12 @@ function stockReason(boardName, state, risk, score, action, trigger) {
   return `${boardName}方向${state}，${action}，${trigger}，风险${risk}，评分${score}`;
 }
 
-function stockReasons(row, board, state, trend = dailyTrendUnknown()) {
+function stockReasons(row, board, state, trend = dailyTrendUnknown(), strategy = normalizeSelectionStrategy()) {
   const reasons = [];
   reasons.push(`所属板块${board.name}评分${board.score}`);
   reasons.push(`个股状态${state}，涨幅${number(row.f3, 0).toFixed(2)}%`);
-  reasons.push(`换手${number(row.f8, 0).toFixed(1)}%，量比${number(row.f10, 0).toFixed(1)}`);
+  reasons.push(`${strategy.useTurnoverVolumeRatio ? "换手参与筛选" : "换手仅展示"}：换手${number(row.f8, 0).toFixed(1)}%；${strategy.useVolumeRatioFilter ? "量比参与筛选" : "量比仅展示"}：量比${number(row.f10, 0).toFixed(1)}`);
+  reasons.push(`${strategy.requireFreeFloatCapLimit ? "流通市值参与筛选" : "流通市值仅展示"}：${formatMoney(row.f21)}，区间${Number(strategy.minFreeFloatCapYi)}-${Number(strategy.maxFreeFloatCapYi)}亿`);
   reasons.push(`日线${trend.label}排列：${trend.detail}`);
   reasons.push(`前日过滤${trend.previousDay.label}：${trend.previousDay.detail}`);
   if (board.front20) reasons.push(`同板块有${board.front20}只20cm/30cm前排`);
@@ -757,11 +898,12 @@ function nextDayPlan(market) {
   return ["强竞价：第一波冲高分批兑现", "平竞价：观察10-30分钟量价承接", "弱竞价：优先卖出，不把尾盘短线做成长线"];
 }
 
-function mapStock(row, board, market, trend = dailyTrendUnknown(), strategy = normalizeSelectionStrategy()) {
+function mapStock(row, board, market, trend = dailyTrendUnknown(), strategy = normalizeSelectionStrategy(), lateMomentum = null) {
+  const adjustedTrend = withRealtimeBreakout(trend, number(row.f2, 0), strategy);
   const state = stockState(row);
-  const risk = stockRisk(row, state);
-  const score = stockScore(row, board.score, state, trend, strategy);
-  const action = stockAction(score, risk, state, board, market);
+  const risk = stockRisk(row, state, strategy);
+  const score = stockScore(row, board.score, state, adjustedTrend, strategy);
+  const action = stockAction(score, risk, state, board, market, strategy);
   const confidence = stockConfidence(score, risk, market);
   const trigger = stockTrigger(row, market);
   return {
@@ -773,15 +915,17 @@ function mapStock(row, board, market, trend = dailyTrendUnknown(), strategy = no
     amount: formatMoney(row.f6),
     volumeRatio: number(row.f10, 0),
     cap: formatMoney(row.f20),
+    freeFloatCap: formatMoney(row.f21),
+    lateMomentum,
     state,
     score,
     risk,
     action,
     confidence,
     trigger,
-    trend,
+    trend: adjustedTrend,
     reason: stockReason(board.name, state, risk, score, action, trigger),
-    reasons: stockReasons(row, board, state, trend),
+    reasons: stockReasons(row, board, state, adjustedTrend, strategy),
     risks: stockRisks(board.name, risk, market),
     plan: nextDayPlan(market)
   };
@@ -789,9 +933,7 @@ function mapStock(row, board, market, trend = dailyTrendUnknown(), strategy = no
 
 async function scoreBoardItem(item, index, market, selectionStrategy) {
   const metrics = boardMetrics(item.board, item.rows);
-  if (item.score < selectionStrategy.minBoardScore) return null;
-  if (Math.round(metrics.breadth * 100) < selectionStrategy.minBoardBreadthPct) return null;
-  if (metrics.active < selectionStrategy.minActiveStocks) return null;
+  if (selectionStrategy.useBoardScoreFilter && item.score < selectionStrategy.minBoardScore) return null;
   const front20 = metrics.front20;
   const support10 = metrics.support10;
   const risk = boardRisk(item.board, front20, support10);
@@ -826,17 +968,29 @@ async function scoreBoardItem(item, index, market, selectionStrategy) {
   };
   const candidateRows = item.rows
     .filter((row) => isLateDayCandidate(row, selectionStrategy))
-    .filter((row) => !selectionStrategy.onlyChiNextCandidates || isChiNext(row.f12))
+    .filter((row) => selectionMarketAllowed(row.f12, selectionStrategy.selectionMarkets))
     .sort((a, b) => pct(b) - pct(a))
     .slice(0, 12);
-  const trends = await Promise.all(candidateRows.map((row) => fetchDailyTrend(row.f12, selectionStrategy)));
+  const useLateMomentum = selectionStrategy.useLateMomentumSort && lateMomentumWindowActive(market);
+  const [trends, lateMomentums] = await Promise.all([
+    Promise.all(candidateRows.map((row) => fetchDailyTrend(row.f12, selectionStrategy))),
+    useLateMomentum
+      ? Promise.all(candidateRows.map((row) => fetchIntradayMomentum(row.f12, selectionStrategy.lateMomentumMinutes)))
+      : Promise.resolve(candidateRows.map(() => null))
+  ]);
   const stocks = candidateRows
-    .map((row, rowIndex) => mapStock(row, board, market, trends[rowIndex], selectionStrategy))
-    .filter((stock) => stock.score >= selectionStrategy.minStockScore)
-    .filter((stock) => !selectionStrategy.requirePreviousDayPattern || stock.trend && stock.trend.previousDay && stock.trend.previousDay.allowed)
+    .map((row, rowIndex) => mapStock(row, board, market, trends[rowIndex], selectionStrategy, lateMomentums[rowIndex]))
+    .filter((stock) => !selectionStrategy.avoidPreviousLimitMove || stock.trend && stock.trend.previousDay && stock.trend.previousDay.patternAllowed)
+    .filter((stock) => !selectionStrategy.requirePreviousDayChangeLimit || stock.trend && stock.trend.previousDay && stock.trend.previousDay.changeAllowed)
     .filter((stock) => !selectionStrategy.requireBullTrend || stock.trend && stock.trend.bullish)
+    .filter((stock) => !selectionStrategy.requireTenDayGainLimit || stock.trend && stock.trend.tenDayGainAllowed)
+    .filter((stock) => !selectionStrategy.requireRecentVolumeExpansion || stock.trend && stock.trend.volumeExpansionAllowed)
+    .filter((stock) => !selectionStrategy.requireSixtyDayHighBreakout || stock.trend && stock.trend.highBreakoutAllowed)
+    .filter((stock) => !useLateMomentum || stock.lateMomentum && stock.lateMomentum.available && stock.lateMomentum.changePct >= selectionStrategy.minLateMomentumPct)
     .filter((stock) => !selectionStrategy.strictLateWindow || market.mode === "late-day" || stock.action === "尾盘候选")
-    .sort((a, b) => b.score - a.score || Number(b.trend.bullish) - Number(a.trend.bullish) || b.change - a.change)
+    .sort((a, b) => useLateMomentum
+      ? Number(b.lateMomentum.changePct) - Number(a.lateMomentum.changePct) || b.score - a.score
+      : b.score - a.score || Number(b.trend.bullish) - Number(a.trend.bullish) || b.change - a.change)
     .slice(0, 5);
   if (!stocks.length) return null;
   return { ...board, stocks };
@@ -870,8 +1024,12 @@ async function buildRecommendations(selectionInput = {}) {
     .slice(0, 8);
 
   const scoredRows = await Promise.all(topItems.map((item, index) => scoreBoardItem(item, index, market, selectionStrategy)));
+  const useLateMomentum = selectionStrategy.useLateMomentumSort && lateMomentumWindowActive(market);
   const scored = scoredRows
     .filter(Boolean)
+    .sort((a, b) => useLateMomentum
+      ? Number(b.stocks[0] && b.stocks[0].lateMomentum && b.stocks[0].lateMomentum.changePct) - Number(a.stocks[0] && a.stocks[0].lateMomentum && a.stocks[0].lateMomentum.changePct)
+      : b.score - a.score)
     .slice(0, 3)
     .map((board, index) => ({ ...board, rank: index + 1 }));
   const phase = phaseAdvice(market);
@@ -921,4 +1079,5 @@ async function handler(req, res) {
 
 handler.marketStatus = marketStatus;
 handler.buildRecommendations = buildRecommendations;
+handler.fetchIntradayMomentum = fetchIntradayMomentum;
 module.exports = handler;

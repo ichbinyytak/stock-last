@@ -5,24 +5,41 @@ const AUTH_TOKEN_KEY = "lateDay.authToken.v1";
 const GUEST_ID = "guest";
 const SCHEDULE_CHECK_MS = 60 * 1000;
 const AUTO_REFRESH_MS = 3000;
-const SELECTION_STRATEGY_VERSION = 4;
+const SELECTION_STRATEGY_VERSION = 12;
 const DEFAULT_SELECTION_STRATEGY = {
+  useStockChangeFilter: true,
   minStockChangePct: 3,
   maxStockChangePct: 18.8,
   minTurnoverPct: 2,
   maxTurnoverPct: 25,
+  useVolumeRatioFilter: false,
   minVolumeRatio: 1,
+  maxVolumeRatio: 5,
+  useBoardScoreFilter: true,
   minBoardScore: 78,
-  minStockScore: 76,
-  minBoardBreadthPct: 45,
-  minActiveStocks: 3,
+  useLateMomentumSort: false,
+  lateMomentumMinutes: 15,
+  minLateMomentumPct: 3,
+  selectionMarkets: ["chinext"],
   requireBullTrend: false,
+  requireTenDayGainLimit: false,
+  tenDayGainLookbackDays: 10,
+  minTenDayGainPct: -100,
+  maxTenDayGainPct: 60,
+  requireRecentVolumeExpansion: false,
+  recentVolumeLookbackDays: 10,
+  minRecentHighVolumeDays: 3,
+  volumeAverageDays: 120,
+  requireSixtyDayHighBreakout: false,
+  highBreakoutLookbackDays: 60,
+  requirePreviousDayChangeLimit: true,
+  maxPreviousDayChangePct: 5,
+  useTurnoverVolumeRatio: false,
+  requireFreeFloatCapLimit: false,
+  minFreeFloatCapYi: 0,
+  maxFreeFloatCapYi: 800,
   avoidNearLimit: true,
-  requirePreviousDayPattern: true,
   avoidPreviousLimitMove: true,
-  maxPreviousBullBodyPct: 5,
-  onlyChiNextCandidates: true,
-  preferElastic20cm: true,
   strictLateWindow: false
 };
 
@@ -46,6 +63,7 @@ let buyTarget = null;
 let refreshTimer = null;
 let autoRefreshEnabled = false;
 let recommendationSignature = "";
+let recommendationRequestId = 0;
 
 function shanghaiClock(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -138,11 +156,24 @@ function appendTrade(trade) {
 function loadLocalSelectionStrategy() {
   const stored = readJson(scopedKey("selectionStrategy"), {});
   const storedVersion = Number(readJson(scopedKey("selectionStrategyVersion"), 0)) || 0;
+  const hadLegacyMarketScope = Object.prototype.hasOwnProperty.call(stored, "onlyChiNextCandidates");
+  delete stored.onlyChiNextCandidates;
+  if (storedVersion < 11 && Array.isArray(stored.selectionMarkets) && stored.selectionMarkets.length === 1 && stored.selectionMarkets[0] === "all") {
+    stored.selectionMarkets = DEFAULT_SELECTION_STRATEGY.selectionMarkets;
+  }
+  if (storedVersion < 12) {
+    ["requireTenDayGainLimit", "requireRecentVolumeExpansion", "requireSixtyDayHighBreakout", "requireFreeFloatCapLimit"].forEach((key) => {
+      if (stored[key] === true) stored[key] = DEFAULT_SELECTION_STRATEGY[key];
+    });
+  }
+  delete stored.requirePreviousDayPattern;
+  delete stored.minBoardBreadthPct;
+  delete stored.minActiveStocks;
   if (!storedVersion && stored.requireBullTrend === true) {
     stored.requireBullTrend = DEFAULT_SELECTION_STRATEGY.requireBullTrend;
-    writeJson(scopedKey("selectionStrategy"), stored);
-    writeJson(scopedKey("selectionStrategyVersion"), SELECTION_STRATEGY_VERSION);
   }
+  if (hadLegacyMarketScope || !storedVersion) writeJson(scopedKey("selectionStrategy"), stored);
+  writeJson(scopedKey("selectionStrategyVersion"), SELECTION_STRATEGY_VERSION);
   selectionStrategy = {
     ...DEFAULT_SELECTION_STRATEGY,
     ...stored
@@ -395,6 +426,7 @@ async function loadPaperSelectionStrategy() {
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "选股策略读取失败");
+    if (!payload.account || payload.account.storageConfigured !== true) return;
     const serverStrategy = payload.account && payload.account.selectionStrategy ? payload.account.selectionStrategy : {};
     if (!Number(payload.account && payload.account.selectionStrategyVersion) && serverStrategy.requireBullTrend === true) {
       serverStrategy.requireBullTrend = DEFAULT_SELECTION_STRATEGY.requireBullTrend;
@@ -604,6 +636,15 @@ function setError(message, detail = "") {
   `;
 }
 
+function setEmpty(message = "当前规则没有候选", detail = "可以放宽选股策略，或关闭部分筛选后再刷新。") {
+  document.getElementById("boards").innerHTML = `
+    <div class="system-panel loading">
+      <strong>${message}</strong>
+      <span>${detail}</span>
+    </div>
+  `;
+}
+
 function renderSummary(summary) {
   const node = document.getElementById("strategySummary");
   if (!node) return;
@@ -699,11 +740,12 @@ function renderStock(board, stock) {
         <span><b>换</b>${Number(stock.turnover || 0).toFixed(1)}%</span>
         <span><b>额</b>${stock.amount}</span>
         <span><b>量</b>${Number(stock.volumeRatio || 0).toFixed(1)}</span>
-        <span><b>值</b>${stock.cap}</span>
+        <span><b>流</b>${stock.freeFloatCap || stock.cap}</span>
       </div>
       <div class="stock-meta">
         <span class="action-tag">${stock.action}</span>
         <span class="state-tag">${stock.state}</span>
+        ${stock.lateMomentum && stock.lateMomentum.available ? `<span class="trend-tag">分钟 ${Number(stock.lateMomentum.changePct).toFixed(2)}%</span>` : ""}
         <span class="trend-tag ${stock.trend && stock.trend.bullish ? "trend-bull" : ""}">日${stock.trend ? stock.trend.label : "待确认"}</span>
         <span class="tag">${stock.risk}</span>
         <span class="reason">${keyReason}</span>
@@ -755,21 +797,28 @@ function recommendationDataSignature(payload) {
 
 async function loadRecommendations(options = {}) {
   if (isLoading && !options.force) return;
+  const requestId = ++recommendationRequestId;
   isLoading = true;
   updateMarketStatus();
-  if (!boards.length) setLoading();
+  if (options.force) {
+    recommendationSignature = "";
+    setLoading("正在按当前规则强制刷新...");
+  } else if (!boards.length) {
+    setLoading();
+  }
   try {
     const response = await fetch(recommendationsUrl(), {
       cache: "no-store"
     });
     const payload = await response.json();
+    if (requestId !== recommendationRequestId) return;
     if (!response.ok) {
       throw new Error(payload.detail || payload.error || `HTTP ${response.status}`);
     }
     const nextBoards = Array.isArray(payload.boards) ? payload.boards : [];
-    if (!nextBoards.length && boards.length) return;
+    if (!nextBoards.length && boards.length && !options.force) return;
     const nextSignature = recommendationDataSignature(payload);
-    if (nextSignature === recommendationSignature) return;
+    if (nextSignature === recommendationSignature && !options.force) return;
     recommendationSignature = nextSignature;
     boards = nextBoards;
     strategySummary = payload.summary || null;
@@ -778,17 +827,24 @@ async function loadRecommendations(options = {}) {
     updateMarketStatus(payload.market);
     setSource(payload.source);
     renderSummary(strategySummary);
-    renderBoards();
+    if (boards.length) renderBoards();
+    else setEmpty();
   } catch (error) {
-    if (boards.length) return;
+    if (requestId !== recommendationRequestId) return;
+    if (boards.length && !options.force) return;
     boards = [];
     strategySummary = null;
     setSource("接口失败");
     updateClock();
     setError("实时行情生成失败", error instanceof Error ? error.message : String(error));
   } finally {
-    isLoading = false;
+    if (requestId === recommendationRequestId) isLoading = false;
   }
+}
+
+async function forceRefreshRecommendations() {
+  await loadPaperSelectionStrategy();
+  await loadRecommendations({ force: true });
 }
 
 document.addEventListener("click", (event) => {
@@ -833,7 +889,7 @@ document.addEventListener("click", (event) => {
 document.getElementById("refreshBtn").addEventListener("click", () => {
   chooseFastSite();
   updateMarketStatus();
-  loadRecommendations({ force: true });
+  forceRefreshRecommendations();
 });
 document.getElementById("autoRefreshBtn").addEventListener("click", toggleAutoRefresh);
 
@@ -871,7 +927,7 @@ async function init() {
   updateMarketStatus();
   updateAutoRefreshUi();
   await loadPaperSelectionStrategy();
-  await loadRecommendations();
+  await loadRecommendations({ force: true });
 }
 
 init();

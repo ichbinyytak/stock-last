@@ -775,6 +775,7 @@ p {
 }
 
 .field input {
+  box-sizing: border-box;
   width: 100%;
   min-height: 38px;
   border: 1px solid var(--line);
@@ -988,9 +989,22 @@ p {
   gap: 5px;
 }
 
+.strategy-group-head {
+  margin-top: 6px;
+  border-bottom: 1px solid var(--line-strong);
+  padding: 5px 0 3px;
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.strategy-group-head:first-child {
+  margin-top: 0;
+}
+
 .strategy-row {
   display: grid;
-  grid-template-columns: minmax(72px, 0.9fr) minmax(72px, 0.8fr) 30px 44px;
+  grid-template-columns: minmax(72px, 0.9fr) minmax(72px, 0.8fr) 30px 20px;
   gap: 5px;
   align-items: center;
   border-bottom: 1px solid #eef2f7;
@@ -1005,31 +1019,264 @@ p {
   white-space: nowrap;
 }
 
+.strategy-title-btn {
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--text);
+  font: inherit;
+  font-weight: 800;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.strategy-title-btn:hover {
+  color: var(--blue);
+}
+
 .strategy-row input[type="number"] {
+  box-sizing: border-box;
   width: 100%;
+  min-width: 7ch;
   min-height: 26px;
   border: 1px solid var(--line);
   border-radius: 5px;
   padding: 2px 5px;
   font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .strategy-row > span {
   color: var(--muted);
 }
 
-.strategy-toggle {
-  display: inline-flex;
-  gap: 5px;
-  align-items: center;
-  color: var(--blue);
-  font-weight: 800;
+.strategy-row-wide {
+  grid-template-columns: minmax(72px, 0.9fr) minmax(0, 1.8fr) 0 20px;
 }
 
-.strategy-detail-btn {
+.strategy-row-toggle {
+  grid-template-columns: minmax(72px, 1fr) auto;
+}
+
+.strategy-row-toggle > span {
+  display: none;
+}
+
+.strategy-row-display {
+  grid-template-columns: minmax(72px, 0.9fr) minmax(72px, 0.8fr) 30px 20px;
+}
+
+.strategy-row-display strong {
+  color: var(--text);
+}
+
+.strategy-row input[type="checkbox"],
+.strategy-custom-check,
+.strategy-value-check {
+  justify-self: end;
+}
+
+.strategy-row.is-default .strategy-title-btn {
+  color: var(--muted);
+}
+
+.strategy-row.is-default input:not(.strategy-custom-check),
+.strategy-row.is-default .strategy-market-options {
+  opacity: 0.58;
+}
+
+.strategy-market-options {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 8px;
+}
+
+.strategy-market-options label {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+  justify-content: flex-end;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.strategy-market-options input[type="checkbox"] {
+  order: 2;
+  flex: 0 0 auto;
+}
+
+.momentum-sort-control {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+}
+
+.change-filter-control {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+}
+
+.turnover-filter-control {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+}
+
+.volume-ratio-filter-control {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+}
+
+.board-score-control {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+}
+
+.ten-day-gain-control {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+}
+
+.volume-expansion-control {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+}
+
+.high-breakout-control {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+}
+
+.previous-day-change-control {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+}
+
+.free-float-cap-control {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+}
+
+.momentum-sort-control input[type="number"] {
+  width: 58px;
   min-height: 24px;
-  padding: 1px 5px;
+  padding: 1px 4px;
+}
+
+.change-filter-control input[type="number"] {
+  width: 58px;
+  min-height: 24px;
+  padding: 1px 4px;
+}
+
+.turnover-filter-control input[type="number"] {
+  width: 58px;
+  min-height: 24px;
+  padding: 1px 4px;
+}
+
+.volume-ratio-filter-control input[type="number"] {
+  width: 58px;
+  min-height: 24px;
+  padding: 1px 4px;
+}
+
+.board-score-control input[type="number"] {
+  width: 58px;
+  min-height: 24px;
+  padding: 1px 4px;
+}
+
+.ten-day-gain-control input[type="number"] {
+  width: 60px;
+  min-height: 24px;
+  padding: 1px 4px;
+}
+
+.volume-expansion-control input[type="number"] {
+  width: 60px;
+  min-height: 24px;
+  padding: 1px 4px;
+}
+
+.high-breakout-control input[type="number"] {
+  width: 58px;
+  min-height: 24px;
+  padding: 1px 4px;
+}
+
+.previous-day-change-control input[type="number"] {
+  width: 58px;
+  min-height: 24px;
+  padding: 1px 4px;
+}
+
+.free-float-cap-control input[type="number"] {
+  width: 66px;
+  min-height: 24px;
+  padding: 1px 4px;
+}
+
+.momentum-sort-control span,
+.change-filter-control span,
+.turnover-filter-control span,
+.volume-ratio-filter-control span,
+.board-score-control span,
+.ten-day-gain-control span,
+.volume-expansion-control span,
+.high-breakout-control span,
+.previous-day-change-control span,
+.free-float-cap-control span {
+  color: var(--muted);
   font-size: 10px;
+  white-space: nowrap;
+}
+
+.momentum-sort-row > .momentum-check,
+.change-filter-row > .change-check,
+.turnover-filter-row > .turnover-check,
+.volume-ratio-filter-row > .volume-ratio-check,
+.board-score-row > .board-score-check,
+.ten-day-gain-row > .ten-day-gain-check,
+.volume-expansion-row > .volume-expansion-check,
+.high-breakout-row > .high-breakout-check,
+.previous-day-change-row > .previous-day-change-check,
+.free-float-cap-row > .free-float-cap-check {
+  grid-column: 4;
+  justify-self: end;
 }
 
 .strategy-actions {
@@ -1806,5 +2053,373 @@ body {
 
   .sector-risk {
     min-height: 19px;
+  }
+}
+
+/* Account strategy workspace: use the page width for rule editing. */
+.account-topbar,
+.account-layout {
+  width: 100%;
+  max-width: min(1180px, calc(100% - 32px));
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.account-topbar {
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  min-height: 64px;
+  padding: 10px 16px;
+}
+
+.account-layout {
+  padding: 16px;
+}
+
+.account-page {
+  gap: 14px;
+}
+
+.account-section {
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.section-line {
+  min-height: 34px;
+  font-size: 14px;
+}
+
+.section-line strong {
+  font-size: 15px;
+}
+
+.strategy-list {
+  gap: 8px;
+}
+
+.strategy-group-head {
+  margin-top: 12px;
+  padding: 8px 0 5px;
+  font-size: 14px;
+}
+
+.strategy-row {
+  grid-template-columns: minmax(180px, 0.9fr) minmax(280px, 1.5fr) 70px 22px;
+  gap: 10px;
+  min-height: 46px;
+  padding: 8px 0;
+  font-size: 14px;
+}
+
+.strategy-row-wide {
+  grid-template-columns: minmax(180px, 0.9fr) minmax(420px, 1.8fr) 0 22px;
+}
+
+.strategy-row-toggle {
+  grid-template-columns: minmax(180px, 1fr) auto;
+}
+
+.strategy-row-display {
+  grid-template-columns: minmax(180px, 0.9fr) minmax(280px, 1.5fr) 70px 22px;
+}
+
+.strategy-title-btn,
+.strategy-row strong {
+  font-size: 14px;
+}
+
+.strategy-row input[type="number"] {
+  min-height: 36px;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 14px;
+}
+
+.strategy-row input[type="checkbox"] {
+  justify-self: end;
+  width: 18px;
+  height: 18px;
+}
+
+.strategy-custom-check,
+.strategy-value-check {
+  justify-self: end;
+}
+
+.strategy-market-options {
+  justify-content: flex-end;
+  gap: 8px 12px;
+}
+
+.strategy-market-options label {
+  min-height: 32px;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 14px;
+}
+
+.momentum-sort-control {
+  gap: 8px;
+}
+
+.change-filter-control {
+  gap: 8px;
+}
+
+.turnover-filter-control {
+  gap: 8px;
+}
+
+.volume-ratio-filter-control {
+  gap: 8px;
+}
+
+.board-score-control {
+  gap: 8px;
+}
+
+.ten-day-gain-control {
+  gap: 8px;
+}
+
+.volume-expansion-control {
+  gap: 8px;
+}
+
+.high-breakout-control {
+  gap: 8px;
+}
+
+.previous-day-change-control {
+  gap: 8px;
+}
+
+.free-float-cap-control {
+  gap: 8px;
+}
+
+.momentum-sort-control input[type="number"] {
+  width: 68px;
+  min-height: 36px;
+  padding: 5px 8px;
+  font-size: 14px;
+}
+
+.change-filter-control input[type="number"] {
+  width: 68px;
+  min-height: 36px;
+  padding: 5px 8px;
+  font-size: 14px;
+}
+
+.turnover-filter-control input[type="number"] {
+  width: 68px;
+  min-height: 36px;
+  padding: 5px 8px;
+  font-size: 14px;
+}
+
+.volume-ratio-filter-control input[type="number"] {
+  width: 72px;
+  min-height: 36px;
+  padding: 5px 8px;
+  font-size: 14px;
+}
+
+.board-score-control input[type="number"] {
+  width: 72px;
+  min-height: 36px;
+  padding: 5px 8px;
+  font-size: 14px;
+}
+
+.ten-day-gain-control input[type="number"] {
+  width: 72px;
+  min-height: 36px;
+  padding: 5px 8px;
+  font-size: 14px;
+}
+
+.volume-expansion-control input[type="number"] {
+  width: 72px;
+  min-height: 36px;
+  padding: 5px 8px;
+  font-size: 14px;
+}
+
+.high-breakout-control input[type="number"] {
+  width: 66px;
+  min-height: 36px;
+  padding: 5px 8px;
+  font-size: 14px;
+}
+
+.previous-day-change-control input[type="number"] {
+  width: 66px;
+  min-height: 36px;
+  padding: 5px 8px;
+  font-size: 14px;
+}
+
+.free-float-cap-control input[type="number"] {
+  width: 88px;
+  min-height: 36px;
+  padding: 5px 8px;
+  font-size: 14px;
+}
+
+.momentum-sort-control span,
+.change-filter-control span,
+.turnover-filter-control span,
+.volume-ratio-filter-control span,
+.board-score-control span,
+.ten-day-gain-control span,
+.volume-expansion-control span,
+.high-breakout-control span,
+.previous-day-change-control span,
+.free-float-cap-control span {
+  font-size: 14px;
+}
+
+.momentum-sort-row > .momentum-check,
+.change-filter-row > .change-check,
+.turnover-filter-row > .turnover-check,
+.volume-ratio-filter-row > .volume-ratio-check,
+.board-score-row > .board-score-check,
+.ten-day-gain-row > .ten-day-gain-check,
+.volume-expansion-row > .volume-expansion-check,
+.high-breakout-row > .high-breakout-check,
+.previous-day-change-row > .previous-day-change-check,
+.free-float-cap-row > .free-float-cap-check {
+  grid-column: 4;
+  align-self: center;
+  justify-self: end;
+}
+
+.strategy-actions .primary-btn,
+.strategy-actions .secondary-btn {
+  min-height: 36px;
+  padding: 5px 14px;
+  font-size: 14px;
+}
+
+@media (max-width: 760px) {
+  .account-topbar,
+  .account-layout {
+    max-width: calc(100% - 16px);
+  }
+
+  .account-topbar {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .account-layout {
+    padding: 10px 8px 18px;
+  }
+
+  .strategy-row,
+  .strategy-row-wide {
+    grid-template-columns: minmax(116px, 0.9fr) minmax(0, 1.3fr) 40px 22px;
+    gap: 8px;
+    font-size: 13px;
+  }
+
+  .strategy-row-toggle {
+    grid-template-columns: minmax(116px, 1fr) auto;
+  }
+
+  .strategy-row-display {
+    grid-template-columns: minmax(116px, 0.9fr) minmax(0, 1.3fr) 40px 22px;
+  }
+
+  .strategy-title-btn,
+  .strategy-row strong {
+    font-size: 13px;
+  }
+
+  .momentum-sort-row,
+  .change-filter-row,
+  .turnover-filter-row,
+  .volume-ratio-filter-row,
+  .board-score-row,
+  .ten-day-gain-row,
+  .volume-expansion-row,
+  .high-breakout-row,
+  .previous-day-change-row,
+  .free-float-cap-row {
+    grid-template-columns: minmax(116px, 1fr) minmax(0, 1fr) 18px;
+  }
+
+  .momentum-sort-row .strategy-title-btn,
+  .change-filter-row .strategy-title-btn,
+  .turnover-filter-row .strategy-title-btn,
+  .volume-ratio-filter-row .strategy-title-btn,
+  .board-score-row .strategy-title-btn,
+  .ten-day-gain-row .strategy-title-btn,
+  .volume-expansion-row .strategy-title-btn,
+  .high-breakout-row .strategy-title-btn,
+  .previous-day-change-row .strategy-title-btn,
+  .free-float-cap-row .strategy-title-btn {
+    grid-column: 1 / -1;
+  }
+
+  .momentum-sort-row > span,
+  .change-filter-row > span,
+  .turnover-filter-row > span,
+  .volume-ratio-filter-row > span,
+  .board-score-row > span,
+  .ten-day-gain-row > span,
+  .volume-expansion-row > span,
+  .high-breakout-row > span,
+  .previous-day-change-row > span,
+  .free-float-cap-row > span {
+    display: none;
+  }
+
+  .momentum-sort-control,
+  .change-filter-control,
+  .turnover-filter-control,
+  .volume-ratio-filter-control,
+  .board-score-control,
+  .ten-day-gain-control,
+  .volume-expansion-control,
+  .high-breakout-control,
+  .previous-day-change-control,
+  .free-float-cap-control {
+    grid-column: 1 / 3;
+  }
+
+  .momentum-sort-row > .momentum-check,
+  .change-filter-row > .change-check,
+  .turnover-filter-row > .turnover-check,
+  .volume-ratio-filter-row > .volume-ratio-check,
+  .board-score-row > .board-score-check,
+  .ten-day-gain-row > .ten-day-gain-check,
+  .volume-expansion-row > .volume-expansion-check,
+  .high-breakout-row > .high-breakout-check,
+  .previous-day-change-row > .previous-day-change-check,
+  .free-float-cap-row > .free-float-cap-check {
+    grid-column: 3;
+  }
+
+  .momentum-sort-control input[type="number"],
+  .change-filter-control input[type="number"],
+  .turnover-filter-control input[type="number"],
+  .volume-ratio-filter-control input[type="number"],
+  .board-score-control input[type="number"] {
+    width: 64px;
+  }
+
+  .ten-day-gain-control input[type="number"],
+  .volume-expansion-control input[type="number"],
+  .high-breakout-control input[type="number"],
+  .previous-day-change-control input[type="number"] {
+    width: 64px;
+  }
+
+  .free-float-cap-control input[type="number"] {
+    width: 72px;
   }
 }
